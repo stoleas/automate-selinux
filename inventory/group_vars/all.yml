@@ -1,0 +1,14 @@
+---
+vertex_ai_proxy_url: "http://localhost:8787"
+
+vm_name: "selinux-demo"
+vm_bridge: "br0"
+vm_vcpus: 2
+vm_memory_mb: 4096
+vm_disk_gb: 20
+rhel_iso_path: "~/Downloads/iso/rhel-10.2-x86_64-boot.iso"
+
+selinux_policy: "targeted"
+observation_period_minutes: 5
+
+report_output_dir: "./reports"
