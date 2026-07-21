@@ -12,3 +12,8 @@ selinux_policy: "targeted"
 observation_period_minutes: 5
 
 report_output_dir: "./reports"
+
+vm_root_password: "{{ vault_vm_root_password }}"
+vm_user_password: "{{ vault_vm_user_password }}"
+rhsm_username: "{{ vault_rhsm_username }}"
+rhsm_password: "{{ vault_rhsm_password }}"

@@ -1,0 +1,39 @@
+---
+- name: Restore VM to baseline snapshot
+  hosts: kvm_hosts
+  become: true
+  tags:
+    - restore
+  tasks:
+    - name: Restore baseline snapshot
+      ansible.builtin.command: >
+        virsh snapshot-revert {{ vm_name }} selinux-disabled-baseline
+
+    - name: Wait for VM to be running after restore
+      ansible.builtin.command: >
+        virsh domstate {{ vm_name }}
+      register: _vm_state
+      retries: 12
+      delay: 5
+      until: "'running' in _vm_state.stdout"
+      changed_when: false
+
+    - name: Discover VM IP address
+      ansible.builtin.shell: >
+        virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
+      register: _vm_ip
+      retries: 30
+      delay: 5
+      until: _vm_ip.stdout | trim | length > 0
+      changed_when: false
+
+    - name: Wait for SSH
+      ansible.builtin.wait_for:
+        host: "{{ _vm_ip.stdout | trim }}"
+        port: 22
+        timeout: 120
+        state: started
+
+    - name: Display restored VM info
+      ansible.builtin.debug:
+        msg: "VM {{ vm_name }} restored to baseline. IP: {{ _vm_ip.stdout | trim }}"

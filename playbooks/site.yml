@@ -1,0 +1,6 @@
+---
+- name: "Phase 2a: Provision VM"
+  ansible.builtin.import_playbook: 01-provision-vm.yml
+
+- name: "Phase 2b: Snapshot baseline"
+  ansible.builtin.import_playbook: 02-snapshot-baseline.yml

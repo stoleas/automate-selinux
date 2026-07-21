@@ -1,0 +1,5 @@
+---
+demo_app_content_dir: "/srv/webapp"
+demo_app_cgi_dir: "/srv/webapp/cgi-bin"
+demo_app_port: 80
+demo_app_config_file: "/etc/httpd/conf.d/demo-webapp.conf"

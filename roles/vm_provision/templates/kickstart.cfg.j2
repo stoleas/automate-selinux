@@ -1,0 +1,61 @@
+#version=RHEL10
+
+# --- Installation source (RHSM CDN) ---
+rhsm --username="{{ rhsm_username }}" --password="{{ rhsm_password }}"
+
+# --- Localization ---
+keyboard --xlayouts='us'
+lang en_US.UTF-8
+timezone America/New_York --utc
+
+# --- Network ---
+network --bootproto=dhcp --device=link --activate --onboot=on
+network --hostname={{ vm_name }}
+
+# --- Authentication ---
+rootpw --iscrypted {{ vm_root_password | password_hash('sha512') }}
+user --name={{ vm_user_name }} --groups=wheel --iscrypted --password={{ vm_user_password | password_hash('sha512') }}
+
+# --- SELinux DISABLED (baseline state for the demo) ---
+selinux --disabled
+
+# --- Firewall ---
+firewall --enabled --ssh
+
+# --- Bootloader ---
+bootloader --append="crashkernel=1G-4G:192M,4G-64G:256M,64G-:512M"
+
+# --- Disk partitioning (UEFI-aware, autopart handles EFI partition) ---
+clearpart --all --initlabel
+autopart --type=lvm
+
+# --- Package selection ---
+%packages
+@^minimal-environment
+policycoreutils-python-utils
+audit
+setroubleshoot-server
+httpd
+python3
+bash-completion
+%end
+
+# --- Post-install ---
+%post --log=/root/ks-post.log
+
+mkdir -p /home/{{ vm_user_name }}/.ssh
+chmod 700 /home/{{ vm_user_name }}/.ssh
+cat >> /home/{{ vm_user_name }}/.ssh/authorized_keys << 'SSHEOF'
+{{ _ssh_pubkey }}
+SSHEOF
+chmod 600 /home/{{ vm_user_name }}/.ssh/authorized_keys
+chown -R {{ vm_user_name }}:{{ vm_user_name }} /home/{{ vm_user_name }}/.ssh
+
+echo "{{ vm_user_name }} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{ vm_user_name }}
+chmod 0440 /etc/sudoers.d/{{ vm_user_name }}
+
+systemctl enable sshd
+
+%end
+
+poweroff

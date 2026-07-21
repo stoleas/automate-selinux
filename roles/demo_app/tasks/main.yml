@@ -1,0 +1,67 @@
+---
+- name: Ensure httpd is installed
+  ansible.builtin.dnf:
+    name: httpd
+    state: present
+
+- name: Create webapp content directory
+  ansible.builtin.file:
+    path: "{{ demo_app_content_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create CGI directory
+  ansible.builtin.file:
+    path: "{{ demo_app_cgi_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Create demo index page
+  ansible.builtin.copy:
+    dest: "{{ demo_app_content_dir }}/index.html"
+    mode: "0644"
+    content: |
+      <!DOCTYPE html>
+      <html>
+      <head><title>SELinux Demo App</title></head>
+      <body>
+        <h1>SELinux Automated Workflow Demo</h1>
+        <p>This page is served from a non-standard directory to trigger AVC denials.</p>
+        <p><a href="/cgi-bin/status.cgi">System Status</a></p>
+      </body>
+      </html>
+
+- name: Create demo CGI script
+  ansible.builtin.copy:
+    dest: "{{ demo_app_cgi_dir }}/status.cgi"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      echo "Content-Type: text/plain"
+      echo ""
+      echo "Hostname: $(hostname)"
+      echo "Date: $(date)"
+      echo "SELinux: $(getenforce 2>/dev/null || echo 'not available')"
+      echo "Uptime: $(uptime)"
+
+- name: Deploy httpd configuration for demo app
+  ansible.builtin.copy:
+    dest: "{{ demo_app_config_file }}"
+    mode: "0644"
+    content: |
+      <VirtualHost *:{{ demo_app_port }}>
+          DocumentRoot "{{ demo_app_content_dir }}"
+          <Directory "{{ demo_app_content_dir }}">
+              Require all granted
+          </Directory>
+          ScriptAlias /cgi-bin/ "{{ demo_app_cgi_dir }}/"
+          <Directory "{{ demo_app_cgi_dir }}">
+              Require all granted
+          </Directory>
+      </VirtualHost>
+
+- name: Enable and start httpd
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+    enabled: true

@@ -1,0 +1,20 @@
+---
+- name: Provision RHEL 10.2 VM with SELinux disabled
+  hosts: kvm_hosts
+  become: true
+  any_errors_fatal: true
+  tags:
+    - provision
+    - vm
+  roles:
+    - role: vm_provision
+
+- name: Set up demo application on the new VM
+  hosts: "{{ vm_name | default('selinux-demo') }}"
+  become: true
+  any_errors_fatal: true
+  tags:
+    - provision
+    - demo_app
+  roles:
+    - role: demo_app

@@ -1,0 +1,25 @@
+---
+vm_name: "selinux-demo"
+vm_vcpus: 2
+vm_memory_mb: 4096
+vm_disk_gb: 20
+vm_disk_path: "/var/lib/libvirt/images/{{ vm_name }}.qcow2"
+vm_bridge: "br0"
+vm_mac_address: "52:54:00:a1:b2:c3"
+vm_os_variant: "rhel10-unknown"
+
+rhel_iso_path: "~/Downloads/iso/rhel-10.2-x86_64-boot.iso"
+
+ks_http_port: 8080
+ks_serve_dir: "/tmp/ks-serve-{{ vm_name }}"
+
+vm_ssh_pubkey_path: "~/.ssh/id_rsa.pub"
+
+vm_install_wait_minutes: 30
+vm_ip_discovery_retries: 60
+vm_ip_discovery_delay: 10
+vm_ssh_wait_timeout: 300
+
+vm_root_password: ""
+vm_user_password: ""
+vm_user_name: "equail"

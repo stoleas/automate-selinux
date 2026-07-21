@@ -1,0 +1,37 @@
+---
+- name: Snapshot VM baseline (SELinux disabled + demo app)
+  hosts: kvm_hosts
+  become: true
+  tags:
+    - snapshot
+  tasks:
+    - name: Check if baseline snapshot already exists
+      ansible.builtin.command: >
+        virsh snapshot-list {{ vm_name }} --name
+      register: _snapshot_list
+      changed_when: false
+
+    - name: Delete existing baseline snapshot if present
+      ansible.builtin.command: >
+        virsh snapshot-delete {{ vm_name }} selinux-disabled-baseline
+      when: "'selinux-disabled-baseline' in _snapshot_list.stdout"
+
+    - name: Create SELinux-disabled baseline snapshot
+      ansible.builtin.command: >
+        virsh snapshot-create-as {{ vm_name }} selinux-disabled-baseline
+        --description "Baseline: SELinux disabled, demo app installed, httpd serving from /srv/webapp/"
+        --atomic
+
+    - name: Verify snapshot was created
+      ansible.builtin.command: >
+        virsh snapshot-info {{ vm_name }} selinux-disabled-baseline
+      register: _snapshot_info
+      changed_when: false
+
+    - name: Display snapshot info
+      ansible.builtin.debug:
+        msg: |
+          Baseline snapshot created successfully.
+          To restore: virsh snapshot-revert {{ vm_name }} selinux-disabled-baseline
+
+          {{ _snapshot_info.stdout }}

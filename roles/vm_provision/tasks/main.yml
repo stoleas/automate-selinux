@@ -1,0 +1,169 @@
+---
+# Phase A: Prerequisites
+
+- name: Ensure libvirtd is running
+  ansible.builtin.systemd:
+    name: libvirtd
+    state: started
+    enabled: true
+
+- name: Get hypervisor IP on bridge interface
+  ansible.builtin.shell: >
+    ip -4 addr show {{ vm_bridge }} | grep -oP '(?<=inet )\d+\.\d+\.\d+\.\d+'
+  register: _hypervisor_bridge_ip
+  changed_when: false
+
+# Phase B: Teardown existing VM
+
+- name: Check if VM already exists
+  ansible.builtin.command: virsh list --all --name
+  register: _vm_list
+  changed_when: false
+
+- name: Destroy existing VM if present
+  ansible.builtin.shell: >
+    virsh destroy {{ vm_name }} 2>/dev/null;
+    virsh undefine {{ vm_name }} --nvram 2>/dev/null;
+    rm -f {{ vm_disk_path }} 2>/dev/null;
+    echo "done"
+  when: vm_name in _vm_list.stdout
+  ignore_errors: true
+
+# Phase C: Disk and kickstart preparation
+
+- name: Create qcow2 disk
+  ansible.builtin.command: >
+    qemu-img create -f qcow2 {{ vm_disk_path }} {{ vm_disk_gb }}G
+
+- name: Read SSH public key
+  ansible.builtin.set_fact:
+    _ssh_pubkey: "{{ lookup('file', vm_ssh_pubkey_path) }}"
+
+- name: Create kickstart serve directory
+  ansible.builtin.file:
+    path: "{{ ks_serve_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Template kickstart file
+  ansible.builtin.template:
+    src: kickstart.cfg.j2
+    dest: "{{ ks_serve_dir }}/kickstart.cfg"
+    mode: "0644"
+
+- name: Open firewall port for kickstart HTTP server
+  ansible.posix.firewalld:
+    port: "{{ ks_http_port }}/tcp"
+    zone: public
+    state: enabled
+    permanent: true
+    immediate: true
+
+- name: Kill any existing kickstart HTTP server
+  ansible.builtin.shell: >
+    pkill -f "python3 -m http.server {{ ks_http_port }} --directory {{ ks_serve_dir }}" 2>/dev/null || true
+  changed_when: false
+
+- name: Start kickstart HTTP server
+  ansible.builtin.shell: >
+    nohup python3 -m http.server {{ ks_http_port }}
+    --directory {{ ks_serve_dir }}
+    > {{ ks_serve_dir }}/http-serve.log 2>&1 &
+
+- name: Verify kickstart HTTP server is responding
+  ansible.builtin.uri:
+    url: "http://{{ _hypervisor_bridge_ip.stdout }}:{{ ks_http_port }}/kickstart.cfg"
+    method: HEAD
+    status_code: 200
+  register: _http_check
+  retries: 5
+  delay: 2
+  until: _http_check.status == 200
+
+# Phase D: VM installation
+
+- name: Install VM via virt-install
+  ansible.builtin.command: >
+    virt-install
+    --name {{ vm_name }}
+    --vcpus {{ vm_vcpus }}
+    --memory {{ vm_memory_mb }}
+    --disk path={{ vm_disk_path }},format=qcow2,bus=virtio
+    --network bridge={{ vm_bridge }},mac={{ vm_mac_address }}
+    --location {{ rhel_iso_path }}
+    --extra-args "inst.ks=http://{{ _hypervisor_bridge_ip.stdout }}:{{ ks_http_port }}/kickstart.cfg console=ttyS0,115200n8"
+    --os-variant {{ vm_os_variant }}
+    --boot uefi
+    --serial file,path=/var/log/libvirt/{{ vm_name }}-serial.log
+    --noautoconsole
+    --wait {{ vm_install_wait_minutes }}
+  async: 2400
+  poll: 30
+
+- name: Verify VM installation completed (VM should be shut off)
+  ansible.builtin.command: virsh domstate {{ vm_name }}
+  register: _vm_state
+  changed_when: false
+  failed_when: "'shut off' not in _vm_state.stdout"
+
+# Phase E: Post-install boot and IP discovery
+
+- name: Kill kickstart HTTP server
+  ansible.builtin.shell: >
+    pkill -f "python3 -m http.server {{ ks_http_port }} --directory {{ ks_serve_dir }}" 2>/dev/null || true
+  changed_when: false
+
+- name: Close firewall port for kickstart HTTP server
+  ansible.posix.firewalld:
+    port: "{{ ks_http_port }}/tcp"
+    zone: public
+    state: disabled
+    permanent: true
+    immediate: true
+
+- name: Start the installed VM
+  ansible.builtin.command: virsh start {{ vm_name }}
+
+- name: Wait for VM to obtain IP address
+  ansible.builtin.shell: >
+    virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
+  register: _vm_ip
+  retries: "{{ vm_ip_discovery_retries }}"
+  delay: "{{ vm_ip_discovery_delay }}"
+  until: _vm_ip.stdout | trim | length > 0
+  changed_when: false
+
+- name: Wait for SSH to become available
+  ansible.builtin.wait_for:
+    host: "{{ _vm_ip.stdout | trim }}"
+    port: 22
+    timeout: "{{ vm_ssh_wait_timeout }}"
+    state: started
+
+- name: Add VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ vm_name }}"
+    ansible_host: "{{ _vm_ip.stdout | trim }}"
+    ansible_user: "{{ vm_user_name }}"
+    groups: rhel_vms
+
+# Phase F: Cleanup and status
+
+- name: Clean up kickstart serve directory
+  ansible.builtin.file:
+    path: "{{ ks_serve_dir }}"
+    state: absent
+
+- name: Display VM info
+  ansible.builtin.command: virsh dominfo {{ vm_name }}
+  register: _vm_info
+  changed_when: false
+
+- name: Show VM status
+  ansible.builtin.debug:
+    msg: |
+      VM {{ vm_name }} provisioned successfully.
+      IP: {{ _vm_ip.stdout | trim }}
+      User: {{ vm_user_name }}
+
+      {{ _vm_info.stdout }}
