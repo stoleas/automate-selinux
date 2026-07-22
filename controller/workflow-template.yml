@@ -1,0 +1,112 @@
+---
+# AAP 2.7 Workflow Template Definition
+# Import via: awx-cli workflow create / Automation Controller API
+#
+# This defines the end-to-end SELinux remediation workflow.
+# Node 5 (Apply Remediation) is gated by an approval node.
+
+workflow_templates:
+  - name: "SELinux Automated Remediation"
+    description: "Collect AVC denials, analyze with AI, generate report, and apply remediations"
+    organization: Default
+    survey_enabled: false
+    nodes:
+      - identifier: collect_avc_logs
+        unified_job_template:
+          name: "SELinux - Collect AVC Logs"
+          type: job_template
+        success_nodes:
+          - ai_analysis
+
+      - identifier: ai_analysis
+        unified_job_template:
+          name: "SELinux - AI Analysis"
+          type: job_template
+        success_nodes:
+          - generate_report
+
+      - identifier: generate_report
+        unified_job_template:
+          name: "SELinux - Generate Report"
+          type: job_template
+        success_nodes:
+          - approve_remediation
+
+      - identifier: approve_remediation
+        unified_job_template:
+          name: "Approve SELinux Remediation"
+          type: workflow_approval
+          timeout: 0
+        success_nodes:
+          - apply_remediation
+
+      - identifier: apply_remediation
+        unified_job_template:
+          name: "SELinux - Apply Remediation"
+          type: job_template
+
+  - name: "SELinux Full Pipeline"
+    description: "Full pipeline from VM provisioning through remediation"
+    organization: Default
+    nodes:
+      - identifier: provision_vm
+        unified_job_template:
+          name: "SELinux - Provision VM"
+          type: job_template
+        success_nodes:
+          - snapshot_baseline
+
+      - identifier: snapshot_baseline
+        unified_job_template:
+          name: "SELinux - Snapshot Baseline"
+          type: job_template
+        success_nodes:
+          - enable_permissive
+
+      - identifier: enable_permissive
+        unified_job_template:
+          name: "SELinux - Enable Permissive"
+          type: job_template
+        success_nodes:
+          - snapshot_permissive
+
+      - identifier: snapshot_permissive
+        unified_job_template:
+          name: "SELinux - Snapshot Permissive"
+          type: job_template
+        success_nodes:
+          - collect_avc_logs
+
+      - identifier: collect_avc_logs
+        unified_job_template:
+          name: "SELinux - Collect AVC Logs"
+          type: job_template
+        success_nodes:
+          - ai_analysis
+
+      - identifier: ai_analysis
+        unified_job_template:
+          name: "SELinux - AI Analysis"
+          type: job_template
+        success_nodes:
+          - generate_report
+
+      - identifier: generate_report
+        unified_job_template:
+          name: "SELinux - Generate Report"
+          type: job_template
+        success_nodes:
+          - approve_remediation
+
+      - identifier: approve_remediation
+        unified_job_template:
+          name: "Approve SELinux Remediation"
+          type: workflow_approval
+          timeout: 0
+        success_nodes:
+          - apply_remediation
+
+      - identifier: apply_remediation
+        unified_job_template:
+          name: "SELinux - Apply Remediation"
+          type: job_template

@@ -1,0 +1,295 @@
+---
+# Provision AAP 2.7 Controller with all objects for the SELinux lab.
+#
+# Uses infra.aap_configuration dispatch role (CaC for AAP 2.5+).
+# Requires: ansible-galaxy collection install -r collections/requirements.yml
+#
+# Usage:
+#   ansible-playbook controller/setup.yml -i localhost, \
+#     -e aap_password=<password> \
+#     -e credential_ssh_key_file=~/.ssh/id_rsa
+
+- name: Provision AAP Controller for SELinux Lab
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  environment:
+    CONTROLLER_OPTIONAL_API_URLPATTERN_PREFIX: /api/controller/
+
+  vars:
+    # ── AAP Connection ──────────────────────────────────────
+    aap_hostname: "{{ lookup('env', 'AAP_HOSTNAME') | default('https://aap-aap.apps.sno.stoleas.home', true) }}"
+    aap_username: "{{ lookup('env', 'AAP_USERNAME') | default('admin', true) }}"
+    aap_password: "{{ lookup('env', 'AAP_PASSWORD') }}"
+    aap_validate_certs: false
+
+    # ── Naming ──────────────────────────────────────────────
+    organization: Default
+    project_name: "SELinux Automated Remediation"
+    project_scm_url: "git@github.com:stoleas/automate-selinux.git"
+    project_scm_branch: main
+    inventory_name: "SELinux Lab"
+    machine_credential_name: "SELinux Lab Machine Credential"
+    vault_credential_name: "SELinux Lab Vault Credential"
+    scm_credential_name: "SELinux Lab SCM Credential"
+
+    credential_ssh_key_file: "~/.ssh/id_rsa"
+    credential_vault_password: ""
+
+    kvm_host_name: main1
+    kvm_host_ip: "192.168.86.145"
+
+    # ── infra.aap_configuration data ────────────────────────
+
+    controller_projects:
+      - name: "{{ project_name }}"
+        organization: "{{ organization }}"
+        scm_type: git
+        scm_url: "{{ project_scm_url }}"
+        scm_branch: "{{ project_scm_branch }}"
+        scm_update_on_launch: true
+        credential: "{{ scm_credential_name }}"
+        update_project: true
+        wait: true
+
+    controller_inventories:
+      - name: "{{ inventory_name }}"
+        organization: "{{ organization }}"
+        variables:
+          vm_name: selinux-demo
+          vm_bridge: br0
+          vm_vcpus: 2
+          vm_memory_mb: 4096
+          vm_disk_gb: 20
+          selinux_policy: targeted
+          observation_period_minutes: 5
+          report_output_dir: ./reports
+
+    controller_hosts:
+      - name: "{{ kvm_host_name }}"
+        inventory: "{{ inventory_name }}"
+        variables:
+          ansible_host: "{{ kvm_host_ip }}"
+          ansible_user: equail
+          ansible_connection: ssh
+          libvirt_uri: "qemu:///system"
+
+    controller_groups:
+      - name: kvm_hosts
+        inventory: "{{ inventory_name }}"
+        hosts:
+          - "{{ kvm_host_name }}"
+      - name: rhel_vms
+        inventory: "{{ inventory_name }}"
+
+    controller_credentials:
+      - name: "{{ scm_credential_name }}"
+        organization: "{{ organization }}"
+        credential_type: "Source Control"
+        inputs:
+          ssh_key_data: "{{ lookup('file', credential_ssh_key_file) }}"
+      - name: "{{ machine_credential_name }}"
+        organization: "{{ organization }}"
+        credential_type: Machine
+        inputs:
+          username: equail
+          ssh_key_data: "{{ lookup('file', credential_ssh_key_file) }}"
+          become_method: sudo
+      - name: "{{ vault_credential_name }}"
+        organization: "{{ organization }}"
+        credential_type: Vault
+        inputs: "{{ {'vault_password': credential_vault_password} if credential_vault_password | length > 0 else {} }}"
+
+    controller_templates:
+      - name: "SELinux - Provision VM"
+        description: "Provision RHEL 10.2 VM with SELinux disabled and install demo app"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/01-provision-vm.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Snapshot Baseline"
+        description: "Snapshot VM with SELinux disabled baseline"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/02-snapshot-baseline.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+      - name: "SELinux - Restore Snapshot"
+        description: "Restore VM to SELinux-disabled baseline snapshot"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/03-restore-snapshot.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+      - name: "SELinux - Enable Permissive"
+        description: "Switch SELinux to permissive, configure auditd, relabel filesystem"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/04-enable-selinux-permissive.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+      - name: "SELinux - Snapshot Permissive"
+        description: "Snapshot VM in SELinux permissive state after relabel and AVC generation"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/05-snapshot-permissive.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+      - name: "SELinux - Collect AVC Logs"
+        description: "Collect AVC denials and audit2allow output from target VM"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/06-collect-avc-logs.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+      - name: "SELinux - AI Analysis"
+        description: "Send AVC findings to Vertex AI for analysis and recommendations"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/07-ai-analysis.yml
+        inventory: "{{ inventory_name }}"
+
+      - name: "SELinux - Generate Report"
+        description: "Generate markdown report from AI analysis"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/08-generate-report.yml
+        inventory: "{{ inventory_name }}"
+
+      - name: "SELinux - Apply Remediation"
+        description: "Apply AI-recommended SELinux remediations to target VM"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/09-apply-remediation.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+
+    controller_workflows:
+      - name: "SELinux Automated Remediation"
+        description: "Collect AVC denials, analyze with AI, generate report, and apply remediations"
+        organization: "{{ organization }}"
+        simplified_workflow_nodes:
+          - identifier: collect_avc_logs
+            unified_job_template: "SELinux - Collect AVC Logs"
+            organization: "{{ organization }}"
+            success_nodes:
+              - ai_analysis
+
+          - identifier: ai_analysis
+            unified_job_template: "SELinux - AI Analysis"
+            organization: "{{ organization }}"
+            success_nodes:
+              - generate_report
+
+          - identifier: generate_report
+            unified_job_template: "SELinux - Generate Report"
+            organization: "{{ organization }}"
+            success_nodes:
+              - approve_remediation
+
+          - identifier: approve_remediation
+            approval_node:
+              name: "Approve SELinux Remediation"
+              timeout: 0
+            organization: "{{ organization }}"
+            success_nodes:
+              - apply_remediation
+
+          - identifier: apply_remediation
+            unified_job_template: "SELinux - Apply Remediation"
+            organization: "{{ organization }}"
+
+      - name: "SELinux Full Pipeline"
+        description: "Full pipeline from VM provisioning through remediation"
+        organization: "{{ organization }}"
+        simplified_workflow_nodes:
+          - identifier: provision_vm
+            unified_job_template: "SELinux - Provision VM"
+            organization: "{{ organization }}"
+            success_nodes:
+              - snapshot_baseline
+
+          - identifier: snapshot_baseline
+            unified_job_template: "SELinux - Snapshot Baseline"
+            organization: "{{ organization }}"
+            success_nodes:
+              - enable_permissive
+
+          - identifier: enable_permissive
+            unified_job_template: "SELinux - Enable Permissive"
+            organization: "{{ organization }}"
+            success_nodes:
+              - snapshot_permissive
+
+          - identifier: snapshot_permissive
+            unified_job_template: "SELinux - Snapshot Permissive"
+            organization: "{{ organization }}"
+            success_nodes:
+              - collect_avc_logs
+
+          - identifier: collect_avc_logs
+            unified_job_template: "SELinux - Collect AVC Logs"
+            organization: "{{ organization }}"
+            success_nodes:
+              - ai_analysis
+
+          - identifier: ai_analysis
+            unified_job_template: "SELinux - AI Analysis"
+            organization: "{{ organization }}"
+            success_nodes:
+              - generate_report
+
+          - identifier: generate_report
+            unified_job_template: "SELinux - Generate Report"
+            organization: "{{ organization }}"
+            success_nodes:
+              - approve_remediation
+
+          - identifier: approve_remediation
+            approval_node:
+              name: "Approve SELinux Remediation"
+              timeout: 0
+            organization: "{{ organization }}"
+            success_nodes:
+              - apply_remediation
+
+          - identifier: apply_remediation
+            unified_job_template: "SELinux - Apply Remediation"
+            organization: "{{ organization }}"
+
+  roles:
+    - infra.aap_configuration.dispatch
+
+  post_tasks:
+    - name: Display setup summary
+      ansible.builtin.debug:
+        msg: |
+          AAP Controller provisioned successfully.
+
+          Project:    {{ project_name }}
+          Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
+          Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}
+          Job Templates: 9
+          Workflows: SELinux Automated Remediation, SELinux Full Pipeline
+
+          Next steps:
+          1. Verify credentials in AAP UI (add SSH key / vault password if not set)
+          2. Sync the project in AAP
+          3. Run "SELinux Full Pipeline" workflow to provision VM and run the full demo

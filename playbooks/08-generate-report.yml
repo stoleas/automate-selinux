@@ -1,0 +1,26 @@
+---
+- name: Generate SELinux analysis report
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tags:
+    - report
+  tasks:
+    - name: Read AI analysis
+      ansible.builtin.slurp:
+        src: "{{ report_output_dir }}/ai-analysis.json"
+      register: _analysis_file
+
+    - name: Parse AI analysis
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ _analysis_file.content | b64decode | from_json }}"
+
+    - name: Render SELinux report
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/selinux-report.md.j2"
+        dest: "{{ report_output_dir }}/selinux-report.md"
+        mode: "0644"
+
+    - name: Display report location
+      ansible.builtin.debug:
+        msg: "Report generated: {{ report_output_dir }}/selinux-report.md"

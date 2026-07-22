@@ -1,0 +1,9 @@
+---
+- name: Analyze AVC denials with AI
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  tags:
+    - analyze
+  roles:
+    - role: selinux_analyze

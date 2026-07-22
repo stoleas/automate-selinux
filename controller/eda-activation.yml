@@ -1,0 +1,24 @@
+---
+# EDA Controller Rulebook Activation Configuration
+# Configure via EDA Controller UI or API.
+
+eda_activations:
+  - name: "SELinux Monitor"
+    description: "Webhook listener that triggers SELinux analysis workflow"
+    rulebook: rulebooks/selinux-monitor.yml
+    decision_environment: "Default Decision Environment"
+    project: "automate-selinux"
+    restart_policy: always
+    enabled: true
+    extra_vars:
+      webhook_port: 5000
+
+# Trigger the webhook with:
+#   curl -X POST http://<eda-controller>:5000/endpoint \
+#     -H "Content-Type: application/json" \
+#     -d '{"action": "analyze_selinux"}'
+#
+# Or for the full pipeline:
+#   curl -X POST http://<eda-controller>:5000/endpoint \
+#     -H "Content-Type: application/json" \
+#     -d '{"action": "full_pipeline"}'

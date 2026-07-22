@@ -1,0 +1,63 @@
+---
+# --- Load collected data ---
+
+- name: Read AVC denials
+  ansible.builtin.slurp:
+    src: "{{ report_output_dir }}/avc-denials.log"
+  register: _avc_file
+
+- name: Read audit2allow suggestions
+  ansible.builtin.slurp:
+    src: "{{ report_output_dir }}/audit2allow-suggestions.txt"
+  register: _audit2allow_file
+
+# --- Build and send AI prompt ---
+
+- name: Build AI analysis prompt
+  ansible.builtin.set_fact:
+    _ai_prompt: "{{ lookup('template', 'ai-prompt.j2') }}"
+  vars:
+    avc_denials: "{{ _avc_file.content | b64decode }}"
+    audit2allow_output: "{{ _audit2allow_file.content | b64decode }}"
+
+- name: Send findings to Vertex AI for analysis
+  ansible.builtin.uri:
+    url: "{{ vertex_ai_proxy_url }}{{ ai_proxy_endpoint }}"
+    method: POST
+    body_format: json
+    body:
+      model: "{{ ai_model }}"
+      messages:
+        - role: user
+          content: "{{ _ai_prompt }}"
+      temperature: 0.1
+    headers:
+      Content-Type: "application/json"
+    status_code: 200
+    timeout: "{{ ai_request_timeout }}"
+  register: _ai_response
+
+# --- Parse and save response ---
+
+- name: Extract AI analysis from response
+  ansible.builtin.set_fact:
+    selinux_analysis: "{{ _ai_response.json.choices[0].message.content | from_json }}"
+
+- name: Save AI analysis to file
+  ansible.builtin.copy:
+    content: "{{ selinux_analysis | to_nice_json }}"
+    dest: "{{ report_output_dir }}/ai-analysis.json"
+    mode: "0644"
+
+- name: Display AI analysis summary
+  ansible.builtin.debug:
+    msg: |
+      === AI Analysis Summary ===
+      {{ selinux_analysis.summary }}
+
+      Findings: {{ selinux_analysis.findings | length }}
+      {% for f in selinux_analysis.findings %}
+      {{ loop.index }}. [{{ f.remediation.type }}] {{ f.denial }}
+      {% endfor %}
+
+      audit2allow assessment: {{ selinux_analysis.audit2allow_assessment }}

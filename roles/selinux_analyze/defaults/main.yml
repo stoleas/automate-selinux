@@ -1,0 +1,8 @@
+---
+vertex_ai_proxy_url: "http://localhost:8787"
+ai_proxy_endpoint: "/v1/chat/completions"
+ai_model: "gemini-2.0-flash"
+ai_request_timeout: 120
+
+report_output_dir: "./reports"
+selinux_policy_module_name: "selinux_demo_policy"

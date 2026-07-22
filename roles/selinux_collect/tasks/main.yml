@@ -1,0 +1,102 @@
+---
+# --- Optional observation period ---
+
+- name: Wait for observation period ({{ observation_period_minutes }} minutes)
+  ansible.builtin.pause:
+    minutes: "{{ observation_period_minutes }}"
+  when: observation_period_minutes | int > 0
+
+# --- Exercise demo app to ensure AVC denials are generated ---
+
+- name: Ensure httpd is running
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+
+- name: Hit demo app index page
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/"
+    return_content: true
+  register: _http_response
+  failed_when: false
+
+- name: Hit demo app CGI endpoint
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/cgi-bin/status.cgi"
+    return_content: true
+  register: _cgi_response
+  failed_when: false
+
+- name: Wait for audit events to flush
+  ansible.builtin.pause:
+    seconds: 3
+
+# --- Collect AVC denials ---
+
+- name: Gather raw AVC denials
+  ansible.builtin.shell: >
+    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null || echo "No AVC denials found"
+  register: _avc_raw
+  changed_when: false
+
+- name: Generate audit2allow suggestions
+  ansible.builtin.shell: >
+    ausearch -m AVC -ts boot 2>/dev/null | audit2allow 2>/dev/null || echo "No suggestions generated"
+  register: _audit2allow
+  changed_when: false
+
+- name: Generate compilable policy module
+  ansible.builtin.shell: >
+    cd /tmp && ausearch -m AVC -ts boot 2>/dev/null | audit2allow -M {{ selinux_policy_module_name }} 2>/dev/null || true
+  register: _audit2allow_module
+  changed_when: false
+
+- name: Read generated policy module source
+  ansible.builtin.slurp:
+    src: "/tmp/{{ selinux_policy_module_name }}.te"
+  register: _policy_te
+  failed_when: false
+
+# --- Save outputs to controller ---
+
+- name: Create report directory on controller
+  ansible.builtin.file:
+    path: "{{ report_output_dir }}"
+    state: directory
+    mode: "0755"
+  delegate_to: localhost
+  become: false
+
+- name: Save AVC denials to controller
+  ansible.builtin.copy:
+    content: "{{ _avc_raw.stdout }}"
+    dest: "{{ report_output_dir }}/avc-denials.log"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+
+- name: Save audit2allow suggestions to controller
+  ansible.builtin.copy:
+    content: "{{ _audit2allow.stdout }}"
+    dest: "{{ report_output_dir }}/audit2allow-suggestions.txt"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+
+- name: Save policy module source to controller
+  ansible.builtin.copy:
+    content: "{{ _policy_te.content | b64decode }}"
+    dest: "{{ report_output_dir }}/{{ selinux_policy_module_name }}.te"
+    mode: "0644"
+  delegate_to: localhost
+  become: false
+  when: _policy_te is not failed
+
+- name: Display collection summary
+  ansible.builtin.debug:
+    msg: |
+      === AVC Collection Summary ===
+      AVC denial lines: {{ _avc_raw.stdout_lines | default([]) | length }}
+      audit2allow suggestion lines: {{ _audit2allow.stdout_lines | default([]) | length }}
+      Policy module: {{ selinux_policy_module_name }}.te
+      Files saved to: {{ report_output_dir }}/

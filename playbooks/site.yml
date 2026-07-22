@@ -4,3 +4,21 @@
 
 - name: "Phase 2b: Snapshot baseline"
   ansible.builtin.import_playbook: 02-snapshot-baseline.yml
+
+- name: "Phase 3a: Enable SELinux permissive + auditd + relabel"
+  ansible.builtin.import_playbook: 04-enable-selinux-permissive.yml
+
+- name: "Phase 3b: Snapshot permissive state"
+  ansible.builtin.import_playbook: 05-snapshot-permissive.yml
+
+- name: "Phase 4: Collect AVC denials"
+  ansible.builtin.import_playbook: 06-collect-avc-logs.yml
+
+- name: "Phase 5: AI analysis of findings"
+  ansible.builtin.import_playbook: 07-ai-analysis.yml
+
+- name: "Phase 6: Generate report"
+  ansible.builtin.import_playbook: 08-generate-report.yml
+
+- name: "Phase 7: Apply remediations"
+  ansible.builtin.import_playbook: 09-apply-remediation.yml

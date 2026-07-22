@@ -1,0 +1,29 @@
+---
+- name: Discover VM for AVC log collection
+  hosts: kvm_hosts
+  become: true
+  tags:
+    - collect
+  tasks:
+    - name: Discover VM IP address
+      ansible.builtin.shell: >
+        virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
+      register: _vm_ip
+      changed_when: false
+      failed_when: _vm_ip.stdout | trim | length == 0
+
+    - name: Add VM to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ vm_name }}"
+        ansible_host: "{{ _vm_ip.stdout | trim }}"
+        ansible_user: "{{ vm_user_name | default('equail') }}"
+        groups: rhel_vms
+
+- name: Collect AVC denials and audit2allow output
+  hosts: "{{ vm_name | default('selinux-demo') }}"
+  become: true
+  any_errors_fatal: true
+  tags:
+    - collect
+  roles:
+    - role: selinux_collect

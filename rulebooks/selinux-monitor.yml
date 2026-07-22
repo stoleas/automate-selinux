@@ -1,0 +1,21 @@
+---
+- name: SELinux Automated Remediation Trigger
+  hosts: all
+  sources:
+    - ansible.eda.webhook:
+        host: 0.0.0.0
+        port: 5000
+  rules:
+    - name: Launch SELinux analysis on webhook trigger
+      condition: event.payload.action == "analyze_selinux"
+      action:
+        run_workflow_template:
+          name: "SELinux Automated Remediation"
+          organization: Default
+
+    - name: Launch full pipeline on provision trigger
+      condition: event.payload.action == "full_pipeline"
+      action:
+        run_workflow_template:
+          name: "SELinux Full Pipeline"
+          organization: Default

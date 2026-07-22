@@ -1,0 +1,7 @@
+---
+selinux_mode: permissive
+selinux_policy: targeted
+selinux_config_file: /etc/selinux/config
+selinux_relabel_timeout: 900
+
+demo_app_port: 80

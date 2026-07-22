@@ -1,0 +1,68 @@
+---
+# AAP 2.7 Job Template Definitions
+# These map each playbook to a Controller job template.
+# Import via awx.awx collection or Controller API.
+
+job_templates:
+  - name: "SELinux - Provision VM"
+    description: "Provision RHEL 10.2 VM with SELinux disabled and install demo app"
+    playbook: playbooks/01-provision-vm.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: false
+
+  - name: "SELinux - Snapshot Baseline"
+    description: "Snapshot VM with SELinux disabled baseline"
+    playbook: playbooks/02-snapshot-baseline.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - Restore Snapshot"
+    description: "Restore VM to SELinux-disabled baseline snapshot"
+    playbook: playbooks/03-restore-snapshot.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - Enable Permissive"
+    description: "Switch SELinux to permissive, configure auditd, relabel filesystem"
+    playbook: playbooks/04-enable-selinux-permissive.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - Snapshot Permissive"
+    description: "Snapshot VM in SELinux permissive state after relabel and AVC generation"
+    playbook: playbooks/05-snapshot-permissive.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - Collect AVC Logs"
+    description: "Collect AVC denials and audit2allow output from target VM"
+    playbook: playbooks/06-collect-avc-logs.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - AI Analysis"
+    description: "Send AVC findings to Vertex AI for analysis and recommendations"
+    playbook: playbooks/07-ai-analysis.yml
+    inventory: "SELinux Lab"
+    credentials: []
+
+  - name: "SELinux - Generate Report"
+    description: "Generate markdown report from AI analysis"
+    playbook: playbooks/08-generate-report.yml
+    inventory: "SELinux Lab"
+    credentials: []
+
+  - name: "SELinux - Apply Remediation"
+    description: "Apply AI-recommended SELinux remediations to target VM"
+    playbook: playbooks/09-apply-remediation.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"

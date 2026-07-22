@@ -1,0 +1,154 @@
+---
+# --- Load AI recommendations ---
+
+- name: Read AI analysis from controller
+  ansible.builtin.slurp:
+    src: "{{ report_output_dir }}/ai-analysis.json"
+  register: _analysis_file
+  delegate_to: localhost
+  become: false
+
+- name: Parse AI analysis
+  ansible.builtin.set_fact:
+    selinux_analysis: "{{ _analysis_file.content | b64decode | from_json }}"
+
+- name: Display remediation plan
+  ansible.builtin.debug:
+    msg: |
+      === Remediation Plan ===
+      Applying {{ selinux_analysis.findings | length }} fixes:
+      {% for f in selinux_analysis.findings %}
+      {{ loop.index }}. [{{ f.remediation.type }}] {{ f.denial }}
+      {% endfor %}
+
+# --- Apply file context remediations ---
+
+- name: Apply SELinux file context rules
+  community.general.sefcontext:
+    target: "{{ item.remediation.path_spec }}"
+    setype: "{{ item.remediation.selinux_type }}"
+    state: present
+  loop: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'fcontext') | list }}"
+  loop_control:
+    label: "{{ item.remediation.path_spec }} → {{ item.remediation.selinux_type }}"
+
+- name: Restore file contexts on affected paths
+  ansible.builtin.command: >
+    restorecon -Rv {{ item.target_path }}
+  loop: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'fcontext') | list }}"
+  loop_control:
+    label: "{{ item.target_path }}"
+  register: _restorecon
+  changed_when: "'Relabeled' in _restorecon.stdout"
+
+# --- Apply boolean remediations ---
+
+- name: Apply SELinux boolean changes
+  ansible.posix.seboolean:
+    name: "{{ item.remediation.boolean_name }}"
+    state: "{{ item.remediation.boolean_value == 'on' }}"
+    persistent: true
+  loop: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'boolean') | list }}"
+  loop_control:
+    label: "{{ item.remediation.boolean_name }} = {{ item.remediation.boolean_value }}"
+
+# --- Apply port label remediations ---
+
+- name: Apply SELinux port labels
+  community.general.seport:
+    ports: "{{ item.remediation.port }}"
+    proto: "{{ item.remediation.protocol }}"
+    setype: "{{ item.remediation.selinux_type }}"
+    state: present
+  loop: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'port') | list }}"
+  loop_control:
+    label: "{{ item.remediation.port }}/{{ item.remediation.protocol }} → {{ item.remediation.selinux_type }}"
+
+# --- Apply custom policy modules ---
+
+- name: Check for policy module source on controller
+  ansible.builtin.stat:
+    path: "{{ report_output_dir }}/{{ selinux_policy_module_name }}.te"
+  register: _policy_te_stat
+  delegate_to: localhost
+  become: false
+
+- name: Set module needed flag
+  ansible.builtin.set_fact:
+    _needs_module: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'module') | list | length > 0 }}"
+
+- name: Copy policy module source to VM
+  ansible.builtin.copy:
+    src: "{{ report_output_dir }}/{{ selinux_policy_module_name }}.te"
+    dest: "/tmp/{{ selinux_policy_module_name }}.te"
+    mode: "0644"
+  when:
+    - _needs_module | bool
+    - _policy_te_stat.stat.exists
+
+- name: Compile policy module
+  ansible.builtin.command: >
+    checkmodule -M -m -o /tmp/{{ selinux_policy_module_name }}.mod
+    /tmp/{{ selinux_policy_module_name }}.te
+  when:
+    - _needs_module | bool
+    - _policy_te_stat.stat.exists
+
+- name: Package policy module
+  ansible.builtin.command: >
+    semodule_package -o /tmp/{{ selinux_policy_module_name }}.pp
+    -m /tmp/{{ selinux_policy_module_name }}.mod
+  when:
+    - _needs_module | bool
+    - _policy_te_stat.stat.exists
+
+- name: Install policy module
+  ansible.builtin.command: >
+    semodule -i /tmp/{{ selinux_policy_module_name }}.pp
+  when:
+    - _needs_module | bool
+    - _policy_te_stat.stat.exists
+
+# --- Verify remediations ---
+
+- name: Restart httpd to test with remediations applied
+  ansible.builtin.systemd:
+    name: httpd
+    state: restarted
+
+- name: Hit demo app to verify access
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/"
+    return_content: true
+    status_code: 200
+  register: _verify_http
+
+- name: Hit CGI endpoint to verify access
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/cgi-bin/status.cgi"
+    return_content: true
+    status_code: 200
+  register: _verify_cgi
+
+- name: Wait for audit events to flush
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Check for remaining AVC denials
+  ansible.builtin.shell: >
+    ausearch -m AVC -ts recent 2>/dev/null | grep -c '^type=AVC' || echo "0"
+  register: _remaining_avcs
+  changed_when: false
+
+- name: Display remediation results
+  ansible.builtin.debug:
+    msg: |
+      === Remediation Results ===
+      HTTP index: {{ _verify_http.status }}
+      CGI script: {{ _verify_cgi.status }}
+      Remaining AVC denials: {{ _remaining_avcs.stdout | trim }}
+      {% if _remaining_avcs.stdout | trim | int == 0 %}
+      All denials resolved — system is ready for enforcing mode.
+      {% else %}
+      WARNING: Some denials remain. Review before switching to enforcing.
+      {% endif %}

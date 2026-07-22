@@ -1,0 +1,104 @@
+---
+# --- Configure SELinux mode ---
+
+- name: Set SELinux to {{ selinux_mode }}
+  ansible.builtin.lineinfile:
+    path: "{{ selinux_config_file }}"
+    regexp: '^SELINUX='
+    line: "SELINUX={{ selinux_mode }}"
+
+- name: Set SELinux policy to {{ selinux_policy }}
+  ansible.builtin.lineinfile:
+    path: "{{ selinux_config_file }}"
+    regexp: '^SELINUXTYPE='
+    line: "SELINUXTYPE={{ selinux_policy }}"
+
+# --- Ensure auditd is ready ---
+
+- name: Ensure audit packages are installed
+  ansible.builtin.dnf:
+    name:
+      - audit
+      - audit-libs
+    state: present
+
+- name: Enable and start auditd
+  ansible.builtin.systemd:
+    name: auditd
+    state: started
+    enabled: true
+
+# --- Filesystem relabel + reboot ---
+
+- name: Create /.autorelabel to trigger full relabel on boot
+  ansible.builtin.file:
+    path: /.autorelabel
+    state: touch
+    mode: "0644"
+
+- name: Reboot for SELinux activation and filesystem relabel
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ selinux_relabel_timeout }}"
+    msg: "Rebooting for SELinux permissive mode and filesystem relabel"
+
+# --- Verify SELinux state ---
+
+- name: Verify SELinux is in {{ selinux_mode }} mode
+  ansible.builtin.command: getenforce
+  register: _getenforce
+  changed_when: false
+  failed_when: _getenforce.stdout | trim | lower != selinux_mode
+
+- name: Get SELinux status
+  ansible.builtin.command: sestatus
+  register: _sestatus
+  changed_when: false
+
+- name: Display SELinux status
+  ansible.builtin.debug:
+    var: _sestatus.stdout_lines
+
+- name: Verify auditd is running
+  ansible.builtin.command: systemctl is-active auditd
+  register: _auditd_status
+  changed_when: false
+  failed_when: _auditd_status.stdout | trim != 'active'
+
+# --- Exercise demo app to generate AVC denials ---
+
+- name: Ensure httpd is running
+  ansible.builtin.systemd:
+    name: httpd
+    state: started
+
+- name: Hit demo app index page
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/"
+    return_content: true
+  register: _http_response
+  failed_when: false
+
+- name: Hit demo app CGI endpoint
+  ansible.builtin.uri:
+    url: "http://localhost:{{ demo_app_port }}/cgi-bin/status.cgi"
+    return_content: true
+  register: _cgi_response
+  failed_when: false
+
+- name: Wait for audit events to flush
+  ansible.builtin.pause:
+    seconds: 3
+
+# --- Report AVC denials ---
+
+- name: Search for AVC denials in audit log
+  ansible.builtin.shell: >
+    ausearch -m AVC --start today 2>/dev/null || echo "No AVC denials found"
+  register: _avc_denials
+  changed_when: false
+
+- name: Display AVC denial summary
+  ansible.builtin.debug:
+    msg: |
+      === AVC Denial Summary ===
+      {{ _avc_denials.stdout }}

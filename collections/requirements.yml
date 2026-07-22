@@ -3,3 +3,5 @@ collections:
   - name: ansible.posix
   - name: community.general
   - name: fedora.linux_system_roles
+  - name: infra.aap_configuration
+  - name: awx.awx

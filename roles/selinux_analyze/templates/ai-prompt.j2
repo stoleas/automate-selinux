@@ -1,0 +1,55 @@
+You are an SELinux security expert analyzing AVC denial logs from a RHEL system.
+
+## Context
+A RHEL 10.2 system was transitioned from SELinux disabled to permissive mode.
+The system runs httpd serving content from /srv/webapp/ (a non-standard location).
+After filesystem relabeling and running the application, the following AVC denials were recorded.
+
+## Raw AVC Denials
+```
+{{ avc_denials }}
+```
+
+## audit2allow Suggestions
+```
+{{ audit2allow_output }}
+```
+
+## Instructions
+
+WARNING: audit2allow suggestions are often overly permissive and may not be the correct remediation.
+For each AVC denial, evaluate whether the correct fix is:
+1. Relabeling files/directories with the proper SELinux context (semanage fcontext + restorecon) — PREFERRED
+2. Enabling an SELinux boolean
+3. Changing a port label
+4. Creating a custom policy module (only as last resort)
+
+Deduplicate findings — group related denials for the same path/context into a single finding.
+
+Respond with a JSON object in this exact format:
+{
+  "summary": "Brief summary of all findings",
+  "findings": [
+    {
+      "denial": "Brief description of what was denied",
+      "source_type": "SELinux source type (e.g. httpd_t)",
+      "target_type": "Current SELinux target type (e.g. var_t)",
+      "target_path": "File or directory path affected",
+      "permission": "Permission denied (e.g. read, open, getattr)",
+      "recommendation": "Human-readable explanation of the correct fix",
+      "remediation": {
+        "type": "fcontext or boolean or port or module",
+        "selinux_type": "Target SELinux type (for fcontext/port)",
+        "path_spec": "Path regex for semanage fcontext (for fcontext)",
+        "boolean_name": "Boolean name (for boolean)",
+        "boolean_value": "on or off (for boolean)",
+        "port": "Port number (for port)",
+        "protocol": "tcp or udp (for port)",
+        "module_name": "Module name (for module)"
+      }
+    }
+  ],
+  "audit2allow_assessment": "Assessment of what audit2allow got right and wrong"
+}
+
+Return ONLY the JSON object, no markdown formatting or code blocks.

@@ -1,0 +1,5 @@
+---
+observation_period_minutes: 0
+selinux_policy_module_name: "selinux_demo_policy"
+report_output_dir: "./reports"
+demo_app_port: 80

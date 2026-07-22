@@ -1,0 +1,37 @@
+---
+- name: Snapshot VM in SELinux permissive state
+  hosts: kvm_hosts
+  become: true
+  tags:
+    - snapshot
+  tasks:
+    - name: Check if permissive snapshot already exists
+      ansible.builtin.command: >
+        virsh snapshot-list {{ vm_name }} --name
+      register: _snapshot_list
+      changed_when: false
+
+    - name: Delete existing permissive snapshot if present
+      ansible.builtin.command: >
+        virsh snapshot-delete {{ vm_name }} selinux-permissive-baseline
+      when: "'selinux-permissive-baseline' in _snapshot_list.stdout"
+
+    - name: Create SELinux-permissive snapshot
+      ansible.builtin.command: >
+        virsh snapshot-create-as {{ vm_name }} selinux-permissive-baseline
+        --description "SELinux permissive, auditd running, filesystem relabeled, AVC denials generated"
+        --atomic
+
+    - name: Verify snapshot was created
+      ansible.builtin.command: >
+        virsh snapshot-info {{ vm_name }} selinux-permissive-baseline
+      register: _snapshot_info
+      changed_when: false
+
+    - name: Display snapshot info
+      ansible.builtin.debug:
+        msg: |
+          Permissive-mode snapshot created successfully.
+          To restore: virsh snapshot-revert {{ vm_name }} selinux-permissive-baseline
+
+          {{ _snapshot_info.stdout }}

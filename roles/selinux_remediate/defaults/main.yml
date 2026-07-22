@@ -1,0 +1,4 @@
+---
+report_output_dir: "./reports"
+selinux_policy_module_name: "selinux_demo_policy"
+demo_app_port: 80
