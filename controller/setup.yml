@@ -51,7 +51,7 @@
         scm_branch: "{{ project_scm_branch }}"
         scm_update_on_launch: true
         credential: "{{ scm_credential_name }}"
-        update_project: true
+        update_project: "{{ controller_update_project | default(false) }}"
         wait: true
 
     controller_inventories:
