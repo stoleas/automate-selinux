@@ -75,6 +75,11 @@
           ansible_user: equail
           ansible_connection: ssh
           libvirt_uri: "qemu:///system"
+      - name: "{{ vm_name }}"
+        inventory: "{{ inventory_name }}"
+        variables:
+          ansible_host: "{{ vm_ip | default('192.168.86.196') }}"
+          ansible_user: equail
 
     controller_groups:
       - name: kvm_hosts
@@ -83,6 +88,8 @@
           - "{{ kvm_host_name }}"
       - name: rhel_vms
         inventory: "{{ inventory_name }}"
+        hosts:
+          - "{{ vm_name }}"
 
     controller_credentials:
       - name: "{{ scm_credential_name }}"
@@ -121,6 +128,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Restore Snapshot"
         description: "Restore VM to SELinux-disabled baseline snapshot"
@@ -130,6 +138,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Enable Permissive"
         description: "Switch SELinux to permissive, configure auditd, relabel filesystem"
@@ -139,6 +148,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Snapshot Permissive"
         description: "Snapshot VM in SELinux permissive state after relabel and AVC generation"
@@ -148,6 +158,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Collect AVC Logs"
         description: "Collect AVC denials and audit2allow output from target VM"
@@ -157,6 +168,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - AI Analysis"
         description: "Send AVC findings to Vertex AI for analysis and recommendations"
@@ -164,6 +176,8 @@
         project: "{{ project_name }}"
         playbook: playbooks/07-ai-analysis.yml
         inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Generate Report"
         description: "Generate markdown report from AI analysis"
@@ -171,6 +185,8 @@
         project: "{{ project_name }}"
         playbook: playbooks/08-generate-report.yml
         inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ vault_credential_name }}"
 
       - name: "SELinux - Apply Remediation"
         description: "Apply AI-recommended SELinux remediations to target VM"
@@ -180,6 +196,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
 
     controller_workflows:
       - name: "SELinux Automated Remediation"
