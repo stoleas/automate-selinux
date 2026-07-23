@@ -41,7 +41,14 @@
 
 - name: Extract AI analysis from response
   ansible.builtin.set_fact:
-    selinux_analysis: "{{ _ai_response.json.choices[0].message.content | from_json }}"
+    _ai_raw: "{{ _ai_response.json.choices[0].message.content }}"
+
+- name: Parse AI analysis (strip code fences if present)
+  ansible.builtin.set_fact:
+    selinux_analysis: >-
+      {{ (_ai_raw is string) |
+         ternary(_ai_raw | regex_replace('(?s)^```json\s*', '') | regex_replace('(?s)\s*```\s*$', '') | from_json,
+                 _ai_raw) }}
 
 - name: Save AI analysis to file
   ansible.builtin.copy:

@@ -39,7 +39,7 @@
     credential_vault_password: ""
 
     kvm_host_name: main1
-    kvm_host_ip: "192.168.86.145"
+    kvm_host_ip: "192.168.86.10"
 
     # ── infra.aap_configuration data ────────────────────────
 
@@ -59,7 +59,7 @@
         organization: "{{ organization }}"
         variables:
           vm_name: selinux-demo
-          vm_bridge: br0
+          vm_bridge: bridge0
           vm_vcpus: 2
           vm_memory_mb: 4096
           vm_disk_gb: 20

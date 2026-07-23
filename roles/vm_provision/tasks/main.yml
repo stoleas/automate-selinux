@@ -24,10 +24,17 @@
   ansible.builtin.shell: >
     virsh destroy {{ vm_name }} 2>/dev/null;
     virsh undefine {{ vm_name }} --nvram 2>/dev/null;
-    rm -f {{ vm_disk_path }} 2>/dev/null;
     echo "done"
   when: vm_name in _vm_list.stdout
   ignore_errors: true
+
+- name: Remove leftover disk and NVRAM from previous attempts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ vm_disk_path }}"
+    - "/var/lib/libvirt/qemu/nvram/{{ vm_name }}_VARS.fd"
 
 # Phase C: Disk and kickstart preparation
 
@@ -61,7 +68,7 @@
 
 - name: Kill any existing kickstart HTTP server
   ansible.builtin.shell: >
-    pkill -f "python3 -m http.server {{ ks_http_port }} --directory {{ ks_serve_dir }}" 2>/dev/null || true
+    fuser -k {{ ks_http_port }}/tcp 2>/dev/null; true
   changed_when: false
 
 - name: Start kickstart HTTP server
@@ -90,27 +97,20 @@
     --memory {{ vm_memory_mb }}
     --disk path={{ vm_disk_path }},format=qcow2,bus=virtio
     --network bridge={{ vm_bridge }},mac={{ vm_mac_address }}
-    --location {{ rhel_iso_path }}
+    --location {{ vm_install_location }}
     --extra-args "inst.ks=http://{{ _hypervisor_bridge_ip.stdout }}:{{ ks_http_port }}/kickstart.cfg console=ttyS0,115200n8"
     --os-variant {{ vm_os_variant }}
-    --boot uefi
     --serial file,path=/var/log/libvirt/{{ vm_name }}-serial.log
     --noautoconsole
     --wait {{ vm_install_wait_minutes }}
   async: 2400
   poll: 30
 
-- name: Verify VM installation completed (VM should be shut off)
-  ansible.builtin.command: virsh domstate {{ vm_name }}
-  register: _vm_state
-  changed_when: false
-  failed_when: "'shut off' not in _vm_state.stdout"
-
-# Phase E: Post-install boot and IP discovery
+# Phase E: Post-install IP discovery
 
 - name: Kill kickstart HTTP server
   ansible.builtin.shell: >
-    pkill -f "python3 -m http.server {{ ks_http_port }} --directory {{ ks_serve_dir }}" 2>/dev/null || true
+    fuser -k {{ ks_http_port }}/tcp 2>/dev/null; true
   changed_when: false
 
 - name: Close firewall port for kickstart HTTP server
@@ -120,9 +120,6 @@
     state: disabled
     permanent: true
     immediate: true
-
-- name: Start the installed VM
-  ansible.builtin.command: virsh start {{ vm_name }}
 
 - name: Wait for VM to obtain IP address
   ansible.builtin.shell: >

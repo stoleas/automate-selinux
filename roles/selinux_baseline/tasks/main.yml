@@ -13,6 +13,16 @@
     regexp: '^SELINUXTYPE='
     line: "SELINUXTYPE={{ selinux_policy }}"
 
+- name: Remove selinux=0 from kernel command line (if set by kickstart)
+  ansible.builtin.command: grubby --update-kernel=ALL --remove-args="selinux=0"
+  register: _grubby_result
+  changed_when: _grubby_result.rc == 0
+
+- name: Ensure selinux=1 is in kernel command line
+  ansible.builtin.command: grubby --update-kernel=ALL --args="selinux=1 security=selinux"
+  register: _grubby_selinux
+  changed_when: _grubby_selinux.rc == 0
+
 # --- Ensure auditd is ready ---
 
 - name: Ensure audit packages are installed
@@ -93,7 +103,7 @@
 
 - name: Search for AVC denials in audit log
   ansible.builtin.shell: >
-    ausearch -m AVC --start today 2>/dev/null || echo "No AVC denials found"
+    ausearch -m AVC -ts boot 2>/dev/null || echo "No AVC denials found"
   register: _avc_denials
   changed_when: false
 

@@ -1,7 +1,8 @@
 #version=RHEL10
 
-# --- Installation source (RHSM CDN) ---
-rhsm --username="{{ rhsm_username }}" --password="{{ rhsm_password }}"
+# --- Installation source (CentOS Stream 10 repos, RHEL 10 compatible) ---
+url --url="https://mirror.stream.centos.org/10-stream/BaseOS/x86_64/os/"
+repo --name="AppStream" --baseurl="https://mirror.stream.centos.org/10-stream/AppStream/x86_64/os/"
 
 # --- Localization ---
 keyboard --xlayouts='us'
@@ -56,6 +57,8 @@ chmod 0440 /etc/sudoers.d/{{ vm_user_name }}
 
 systemctl enable sshd
 
+subscription-manager register --username="{{ rhsm_username }}" --password="{{ rhsm_password }}" --auto-attach || true
+
 %end
 
-poweroff
+reboot

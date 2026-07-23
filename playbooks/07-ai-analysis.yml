@@ -2,7 +2,8 @@
 - name: Analyze AVC denials with AI
   hosts: localhost
   connection: local
-  gather_facts: true
+  gather_facts: false
+  become: false
   tags:
     - analyze
   roles:

@@ -35,19 +35,19 @@
 
 - name: Gather raw AVC denials
   ansible.builtin.shell: >
-    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null || echo "No AVC denials found"
+    grep 'type=AVC' /var/log/audit/audit.log || echo "No AVC denials found"
   register: _avc_raw
   changed_when: false
 
 - name: Generate audit2allow suggestions
   ansible.builtin.shell: >
-    ausearch -m AVC -ts boot 2>/dev/null | audit2allow 2>/dev/null || echo "No suggestions generated"
+    grep 'type=AVC' /var/log/audit/audit.log | audit2allow 2>/dev/null || echo "No suggestions generated"
   register: _audit2allow
   changed_when: false
 
 - name: Generate compilable policy module
   ansible.builtin.shell: >
-    cd /tmp && ausearch -m AVC -ts boot 2>/dev/null | audit2allow -M {{ selinux_policy_module_name }} 2>/dev/null || true
+    cd /tmp && grep 'type=AVC' /var/log/audit/audit.log | audit2allow -M {{ selinux_policy_module_name }} 2>/dev/null || true
   register: _audit2allow_module
   changed_when: false
 
@@ -90,7 +90,7 @@
     mode: "0644"
   delegate_to: localhost
   become: false
-  when: _policy_te is not failed
+  when: _policy_te.content is defined
 
 - name: Display collection summary
   ansible.builtin.debug:
