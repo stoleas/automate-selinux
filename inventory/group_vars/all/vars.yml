@@ -1,5 +1,5 @@
 ---
-vertex_ai_proxy_url: "http://localhost:8787"
+vertex_ai_proxy_url: "http://192.168.86.11:8787"
 
 vm_name: "selinux-demo"
 vm_bridge: "bridge0"
