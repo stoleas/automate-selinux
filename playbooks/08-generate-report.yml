@@ -7,14 +7,15 @@
   tags:
     - report
   tasks:
-    - name: Read AI analysis
+    - name: Read AI analysis from file
       ansible.builtin.slurp:
         src: "{{ report_output_dir }}/ai-analysis.json"
       register: _analysis_file
+      failed_when: false
 
-    - name: Parse AI analysis
+    - name: Resolve AI analysis (prefer file, fall back to workflow stats)
       ansible.builtin.set_fact:
-        selinux_analysis: "{{ _analysis_file.content | b64decode | from_json }}"
+        selinux_analysis: "{{ (_analysis_file.content | b64decode | from_json) if (_analysis_file.content is defined) else (selinux_analysis_json | from_json) }}"
 
     - name: Render SELinux report
       ansible.builtin.template:

@@ -1,15 +1,27 @@
 ---
 # --- Load collected data ---
 
-- name: Read AVC denials
+- name: Read AVC denials from file
   ansible.builtin.slurp:
     src: "{{ report_output_dir }}/avc-denials.log"
   register: _avc_file
+  failed_when: false
 
-- name: Read audit2allow suggestions
+- name: Read audit2allow suggestions from file
   ansible.builtin.slurp:
     src: "{{ report_output_dir }}/audit2allow-suggestions.txt"
   register: _audit2allow_file
+  failed_when: false
+
+- name: Resolve AVC data (prefer file, fall back to workflow stats)
+  ansible.builtin.set_fact:
+    _avc_data: "{{ (_avc_file.content | b64decode) if (_avc_file.content is defined) else (avc_denials_raw | default('')) }}"
+    _audit2allow_data: "{{ (_audit2allow_file.content | b64decode) if (_audit2allow_file.content is defined) else (audit2allow_suggestions | default('')) }}"
+
+- name: Fail if no AVC data available
+  ansible.builtin.fail:
+    msg: "No AVC denial data found — neither report files nor workflow stats are available"
+  when: _avc_data | length == 0
 
 # --- Build and send AI prompt ---
 
@@ -17,8 +29,8 @@
   ansible.builtin.set_fact:
     _ai_prompt: "{{ lookup('template', 'ai-prompt.j2') }}"
   vars:
-    avc_denials: "{{ _avc_file.content | b64decode }}"
-    audit2allow_output: "{{ _audit2allow_file.content | b64decode }}"
+    avc_denials: "{{ _avc_data }}"
+    audit2allow_output: "{{ _audit2allow_data }}"
 
 - name: Send findings to Vertex AI for analysis
   ansible.builtin.uri:
@@ -55,6 +67,12 @@
     content: "{{ selinux_analysis | to_nice_json }}"
     dest: "{{ report_output_dir }}/ai-analysis.json"
     mode: "0644"
+
+- name: Pass AI analysis to next workflow node via set_stats
+  ansible.builtin.set_stats:
+    data:
+      selinux_analysis_json: "{{ selinux_analysis | to_json }}"
+    per_host: false
 
 - name: Display AI analysis summary
   ansible.builtin.debug:

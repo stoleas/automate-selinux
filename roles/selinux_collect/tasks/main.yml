@@ -92,6 +92,14 @@
   become: false
   when: _policy_te.content is defined
 
+- name: Pass collected data to next workflow node via set_stats
+  ansible.builtin.set_stats:
+    data:
+      avc_denials_raw: "{{ _avc_raw.stdout }}"
+      audit2allow_suggestions: "{{ _audit2allow.stdout }}"
+      policy_module_te: "{{ (_policy_te.content | b64decode) if _policy_te.content is defined else '' }}"
+    per_host: false
+
 - name: Display collection summary
   ansible.builtin.debug:
     msg: |
