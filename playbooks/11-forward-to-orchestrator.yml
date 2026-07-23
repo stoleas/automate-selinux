@@ -1,0 +1,39 @@
+---
+- name: Forward event to Automation Orchestrator
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tasks:
+    - name: Get fresh Orchestrator token
+      ansible.builtin.uri:
+        url: "{{ orchestrator_url }}/api/v1/auth/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ orchestrator_username }}"
+          password: "{{ orchestrator_password }}"
+        validate_certs: false
+      register: auth_response
+
+    - name: POST event to Orchestrator webhook
+      ansible.builtin.uri:
+        url: "{{ orchestrator_url }}/api/v1/webhooks/selinux"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ auth_response.json.access_token }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          kafka_topic: "{{ orchestrator_topic | default('eda-selinux') }}"
+          payload: "{{ orchestrator_event }}"
+        validate_certs: false
+        status_code: [200, 201, 202]
+      register: webhook_result
+
+    - name: Show webhook response
+      ansible.builtin.debug:
+        msg: |
+          === Orchestrator Webhook Response ===
+          Status: {{ webhook_result.status }}
+          Response: {{ webhook_result.json | default('no body') }}

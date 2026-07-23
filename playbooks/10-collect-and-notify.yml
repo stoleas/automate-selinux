@@ -1,0 +1,72 @@
+---
+- name: Discover VM for AVC log collection
+  hosts: kvm_hosts
+  become: true
+  tags:
+    - collect
+    - notify
+  tasks:
+    - name: Discover VM IP address
+      ansible.builtin.shell: >
+        virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
+      register: _vm_ip
+      changed_when: false
+      failed_when: _vm_ip.stdout | trim | length == 0
+
+    - name: Add VM to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ vm_name }}"
+        ansible_host: "{{ _vm_ip.stdout | trim }}"
+        ansible_user: "{{ vm_user_name | default('equail') }}"
+        groups: rhel_vms
+
+- name: Collect AVC denials and audit2allow output
+  hosts: "{{ vm_name | default('selinux-demo') }}"
+  become: true
+  any_errors_fatal: true
+  tags:
+    - collect
+    - notify
+  roles:
+    - role: selinux_collect
+
+- name: Send event to EDA webhook
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  tags:
+    - notify
+  tasks:
+    - name: Read AVC denials count
+      ansible.builtin.slurp:
+        src: "{{ report_output_dir }}/avc-denials.log"
+      register: _avc_file
+
+    - name: Count AVC denial lines
+      ansible.builtin.set_fact:
+        _avc_count: "{{ (_avc_file.content | b64decode).split('\n') | select | length }}"
+
+    - name: Send SELinux analysis event to EDA
+      ansible.builtin.uri:
+        url: "{{ eda_webhook_url | default('http://localhost:5000/endpoint') }}"
+        method: POST
+        body_format: json
+        body:
+          action: selinux_analysis
+          host: "{{ vm_name | default('selinux-demo') }}"
+          avc_count: "{{ _avc_count }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+        headers:
+          Content-Type: application/json
+        status_code: [200, 201, 202]
+      register: _eda_response
+
+    - name: Display notification summary
+      ansible.builtin.debug:
+        msg: |
+          === EDA Notification Sent ===
+          Endpoint: {{ eda_webhook_url | default('http://localhost:5000/endpoint') }}
+          Action: selinux_analysis
+          AVC denials: {{ _avc_count }}
+          Response: {{ _eda_response.status }}

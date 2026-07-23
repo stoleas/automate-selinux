@@ -38,10 +38,36 @@
     credential_ssh_key_file: "~/.ssh/id_rsa"
     credential_vault_password: ""
 
+    vm_name: "selinux-demo"
     kvm_host_name: main1
     kvm_host_ip: "192.168.86.10"
 
+    # ── Orchestrator ──────────────────────────────────────────
+    orchestrator_url: "https://automa-d61a1901-automation-orchestrator-automation-orchestrator.apps.sno.stoleas.home"
+    orchestrator_credential_name: "Automation Orchestrator"
+
     # ── infra.aap_configuration data ────────────────────────
+
+    controller_credential_types:
+      - name: "Orchestrator Credential"
+        kind: cloud
+        inputs:
+          fields:
+            - id: orchestrator_url
+              type: string
+              label: Orchestrator URL
+            - id: orchestrator_username
+              type: string
+              label: Username
+            - id: orchestrator_password
+              type: string
+              label: Password
+              secret: true
+        injectors:
+          extra_vars:
+            orchestrator_url: !unsafe "{{ orchestrator_url }}"
+            orchestrator_username: !unsafe "{{ orchestrator_username }}"
+            orchestrator_password: !unsafe "{{ orchestrator_password }}"
 
     controller_projects:
       - name: "{{ project_name }}"
@@ -108,6 +134,13 @@
         organization: "{{ organization }}"
         credential_type: Vault
         inputs: "{{ {'vault_password': credential_vault_password} if credential_vault_password | length > 0 else {} }}"
+      - name: "{{ orchestrator_credential_name }}"
+        organization: "{{ organization }}"
+        credential_type: "Orchestrator Credential"
+        inputs:
+          orchestrator_url: "{{ orchestrator_url }}"
+          orchestrator_username: "{{ orchestrator_user | default('admin') }}"
+          orchestrator_password: "{{ orchestrator_pass | default('') }}"
 
     controller_templates:
       - name: "SELinux - Provision VM"
@@ -197,6 +230,25 @@
         credentials:
           - "{{ machine_credential_name }}"
           - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Collect and Notify"
+        description: "Collect AVC denials from target VM and send event to EDA for Orchestrator processing"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/10-collect-and-notify.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Forward to Orchestrator"
+        description: "Forward EDA event to Automation Orchestrator webhook"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/11-forward-to-orchestrator.yml
+        inventory: "{{ inventory_name }}"
+        credentials:
+          - "{{ orchestrator_credential_name }}"
 
     controller_workflows:
       - name: "SELinux Automated Remediation"
@@ -291,6 +343,35 @@
             unified_job_template: "SELinux - Apply Remediation"
             organization: "{{ organization }}"
 
+      - name: "SELinux Orchestrated Remediation"
+        description: "Orchestrator-triggered workflow: AI analysis, report, approval, and remediation"
+        organization: "{{ organization }}"
+        simplified_workflow_nodes:
+          - identifier: ai_analysis
+            unified_job_template: "SELinux - AI Analysis"
+            organization: "{{ organization }}"
+            success_nodes:
+              - generate_report
+
+          - identifier: generate_report
+            unified_job_template: "SELinux - Generate Report"
+            organization: "{{ organization }}"
+            success_nodes:
+              - approve_remediation
+
+          - identifier: approve_remediation
+            approval_node:
+              name: "Review SELinux Report"
+              description: "Review the AI analysis in the Google Sheet before approving remediation"
+              timeout: 0
+            organization: "{{ organization }}"
+            success_nodes:
+              - apply_remediation
+
+          - identifier: apply_remediation
+            unified_job_template: "SELinux - Apply Remediation"
+            organization: "{{ organization }}"
+
   roles:
     - infra.aap_configuration.dispatch
 
@@ -302,11 +383,12 @@
 
           Project:    {{ project_name }}
           Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
-          Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}
-          Job Templates: 9
-          Workflows: SELinux Automated Remediation, SELinux Full Pipeline
+          Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}, {{ orchestrator_credential_name }}
+          Job Templates: 11
+          Workflows: SELinux Automated Remediation, SELinux Full Pipeline, SELinux Orchestrated Remediation
 
           Next steps:
-          1. Verify credentials in AAP UI (add SSH key / vault password if not set)
+          1. Verify credentials in AAP UI (add SSH key / vault password / orchestrator password if not set)
           2. Sync the project in AAP
-          3. Run "SELinux Full Pipeline" workflow to provision VM and run the full demo
+          3. Configure Orchestrator workflow with webhook /api/v1/webhooks/selinux
+          4. Run "SELinux Full Pipeline" to provision VM, or "SELinux - Collect and Notify" for Orchestrator flow

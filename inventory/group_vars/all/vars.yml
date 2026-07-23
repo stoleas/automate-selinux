@@ -14,6 +14,9 @@ observation_period_minutes: 5
 
 report_output_dir: "/home/equail/Projects/lightwell/automate-selinux/reports"
 
+orchestrator_url: "https://automa-d61a1901-automation-orchestrator-automation-orchestrator.apps.sno.stoleas.home"
+eda_webhook_url: "http://localhost:5000/endpoint"
+
 vm_root_password: "{{ vault_vm_root_password }}"
 vm_user_password: "{{ vault_vm_user_password }}"
 rhsm_username: "{{ vault_rhsm_username }}"
