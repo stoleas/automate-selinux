@@ -62,11 +62,19 @@
          ternary(_ai_raw | regex_replace('(?s)^```json\s*', '') | regex_replace('(?s)\s*```\s*$', '') | from_json,
                  _ai_raw) }}
 
+- name: Ensure report directory exists
+  ansible.builtin.file:
+    path: "{{ report_output_dir }}"
+    state: directory
+    mode: "0755"
+  failed_when: false
+
 - name: Save AI analysis to file
   ansible.builtin.copy:
     content: "{{ selinux_analysis | to_nice_json }}"
     dest: "{{ report_output_dir }}/ai-analysis.json"
     mode: "0644"
+  failed_when: false
 
 - name: Pass AI analysis to next workflow node via set_stats
   ansible.builtin.set_stats:

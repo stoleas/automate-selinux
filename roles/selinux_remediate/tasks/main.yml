@@ -7,10 +7,11 @@
   register: _analysis_file
   delegate_to: localhost
   become: false
+  failed_when: false
 
-- name: Parse AI analysis
+- name: Resolve AI analysis (prefer file, fall back to workflow stats)
   ansible.builtin.set_fact:
-    selinux_analysis: "{{ _analysis_file.content | b64decode | from_json }}"
+    selinux_analysis: "{{ (_analysis_file.content | b64decode | from_json) if (_analysis_file.content is defined) else (selinux_analysis_json | from_json) }}"
 
 - name: Display remediation plan
   ansible.builtin.debug:
@@ -66,25 +67,43 @@
 
 # --- Apply custom policy modules ---
 
+- name: Set module needed flag
+  ansible.builtin.set_fact:
+    _needs_module: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'module') | list | length > 0 }}"
+    _policy_te_content: "{{ policy_module_te | default('') }}"
+
 - name: Check for policy module source on controller
   ansible.builtin.stat:
     path: "{{ report_output_dir }}/{{ selinux_policy_module_name }}.te"
   register: _policy_te_stat
   delegate_to: localhost
   become: false
+  failed_when: false
 
-- name: Set module needed flag
-  ansible.builtin.set_fact:
-    _needs_module: "{{ selinux_analysis.findings | selectattr('remediation.type', 'equalto', 'module') | list | length > 0 }}"
-
-- name: Copy policy module source to VM
+- name: Copy policy module source to VM (from file)
   ansible.builtin.copy:
     src: "{{ report_output_dir }}/{{ selinux_policy_module_name }}.te"
     dest: "/tmp/{{ selinux_policy_module_name }}.te"
     mode: "0644"
   when:
     - _needs_module | bool
-    - _policy_te_stat.stat.exists
+    - _policy_te_stat.stat is defined
+    - _policy_te_stat.stat.exists | default(false)
+
+- name: Copy policy module source to VM (from workflow stats)
+  ansible.builtin.copy:
+    content: "{{ _policy_te_content }}"
+    dest: "/tmp/{{ selinux_policy_module_name }}.te"
+    mode: "0644"
+  when:
+    - _needs_module | bool
+    - not (_policy_te_stat.stat is defined and _policy_te_stat.stat.exists | default(false))
+    - _policy_te_content | length > 0
+
+- name: Check policy module source exists on VM
+  ansible.builtin.stat:
+    path: "/tmp/{{ selinux_policy_module_name }}.te"
+  register: _policy_on_vm
 
 - name: Compile policy module
   ansible.builtin.command: >
@@ -92,7 +111,7 @@
     /tmp/{{ selinux_policy_module_name }}.te
   when:
     - _needs_module | bool
-    - _policy_te_stat.stat.exists
+    - _policy_on_vm.stat.exists
 
 - name: Package policy module
   ansible.builtin.command: >
@@ -100,14 +119,14 @@
     -m /tmp/{{ selinux_policy_module_name }}.mod
   when:
     - _needs_module | bool
-    - _policy_te_stat.stat.exists
+    - _policy_on_vm.stat.exists
 
 - name: Install policy module
   ansible.builtin.command: >
     semodule -i /tmp/{{ selinux_policy_module_name }}.pp
   when:
     - _needs_module | bool
-    - _policy_te_stat.stat.exists
+    - _policy_on_vm.stat.exists
 
 # --- Verify remediations ---
 

@@ -17,11 +17,19 @@
       ansible.builtin.set_fact:
         selinux_analysis: "{{ (_analysis_file.content | b64decode | from_json) if (_analysis_file.content is defined) else (selinux_analysis_json | from_json) }}"
 
+    - name: Ensure report directory exists
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
+        state: directory
+        mode: "0755"
+      failed_when: false
+
     - name: Render SELinux report
       ansible.builtin.template:
         src: "{{ playbook_dir }}/../templates/selinux-report.md.j2"
         dest: "{{ report_output_dir }}/selinux-report.md"
         mode: "0644"
+      failed_when: false
 
     - name: Display report location
       ansible.builtin.debug:
