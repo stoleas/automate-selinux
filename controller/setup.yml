@@ -247,6 +247,7 @@
         project: "{{ project_name }}"
         playbook: playbooks/11-forward-to-orchestrator.yml
         inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
         credentials:
           - "{{ orchestrator_credential_name }}"
 

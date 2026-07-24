@@ -20,14 +20,14 @@ eda_activations:
       - name: selinux-event-stream
         source_name: selinux-event-stream
 
-# Event stream URL (after activation is created):
-#   https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/<uuid>/post/
+# Event stream URL:
+#   https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/b86e11ce-d4e0-45bb-a867-9ab79f7c32ad/post/
 #
 # Trigger with:
 #   curl -k -u selinux:redhat123 -X POST \
 #     -H "Content-Type: application/json" \
 #     -d '{"action": "selinux_analysis", "host": "selinux-demo", "avc_count": "5", "timestamp": "2026-01-01T00:00:00Z"}' \
-#     "<event_stream_url>"
+#     "https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/b86e11ce-d4e0-45bb-a867-9ab79f7c32ad/post/"
 #
 # Actions (via event.payload.action):
 #   selinux_analysis  - Forward to Orchestrator via job template
