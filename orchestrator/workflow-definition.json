@@ -1,0 +1,70 @@
+{
+  "name": "SELinux Remediation Workflow",
+  "description": "EDA -> AI analysis -> Report -> Human approval -> AAP remediation",
+  "workflow_definition": {
+    "schema_version": "2.0.0",
+    "name": "SELinux Remediation Workflow",
+    "triggers": [
+      {
+        "id": "t1",
+        "type": "webhook_trigger",
+        "name": "SELinux EDA Trigger",
+        "config": {
+          "webhook_path": "selinux"
+        }
+      }
+    ],
+    "nodes": [
+      {
+        "id": "n1",
+        "type": "aap_job_template",
+        "name": "AI Analysis",
+        "config": {
+          "job_template_id": "PLACEHOLDER_AI_ANALYSIS_JT_ID",
+          "extra_vars": {
+            "trigger_payload": "{{ trigger.payload }}"
+          },
+          "credential_id": "PLACEHOLDER_AAP_CREDENTIAL_ID"
+        }
+      },
+      {
+        "id": "n2",
+        "type": "aap_job_template",
+        "name": "Generate Report",
+        "config": {
+          "job_template_id": "PLACEHOLDER_GENERATE_REPORT_JT_ID",
+          "extra_vars": {
+            "trigger_payload": "{{ trigger.payload }}"
+          },
+          "credential_id": "PLACEHOLDER_AAP_CREDENTIAL_ID"
+        }
+      },
+      {
+        "id": "n3",
+        "type": "approval",
+        "name": "Review SELinux Report",
+        "config": {
+          "decision_window": 86400
+        }
+      },
+      {
+        "id": "n4",
+        "type": "aap_job_template",
+        "name": "Apply Remediation",
+        "config": {
+          "job_template_id": "PLACEHOLDER_APPLY_REMEDIATION_JT_ID",
+          "extra_vars": {
+            "trigger_payload": "{{ trigger.payload }}"
+          },
+          "credential_id": "PLACEHOLDER_AAP_CREDENTIAL_ID"
+        }
+      }
+    ],
+    "edges": [
+      { "from": "t1", "to": "n1" },
+      { "from": "n1", "to": "n2" },
+      { "from": "n2", "to": "n3" },
+      { "from": "n3", "to": "n4", "from_port": "approved" }
+    ]
+  }
+}

@@ -251,128 +251,6 @@
         credentials:
           - "{{ orchestrator_credential_name }}"
 
-    controller_workflows:
-      - name: "SELinux Automated Remediation"
-        description: "Collect AVC denials, analyze with AI, generate report, and apply remediations"
-        organization: "{{ organization }}"
-        simplified_workflow_nodes:
-          - identifier: collect_avc_logs
-            unified_job_template: "SELinux - Collect AVC Logs"
-            organization: "{{ organization }}"
-            success_nodes:
-              - ai_analysis
-
-          - identifier: ai_analysis
-            unified_job_template: "SELinux - AI Analysis"
-            organization: "{{ organization }}"
-            success_nodes:
-              - generate_report
-
-          - identifier: generate_report
-            unified_job_template: "SELinux - Generate Report"
-            organization: "{{ organization }}"
-            success_nodes:
-              - approve_remediation
-
-          - identifier: approve_remediation
-            approval_node:
-              name: "Approve SELinux Remediation"
-              timeout: 0
-            organization: "{{ organization }}"
-            success_nodes:
-              - apply_remediation
-
-          - identifier: apply_remediation
-            unified_job_template: "SELinux - Apply Remediation"
-            organization: "{{ organization }}"
-
-      - name: "SELinux Full Pipeline"
-        description: "Full pipeline from VM provisioning through remediation"
-        organization: "{{ organization }}"
-        simplified_workflow_nodes:
-          - identifier: provision_vm
-            unified_job_template: "SELinux - Provision VM"
-            organization: "{{ organization }}"
-            success_nodes:
-              - snapshot_baseline
-
-          - identifier: snapshot_baseline
-            unified_job_template: "SELinux - Snapshot Baseline"
-            organization: "{{ organization }}"
-            success_nodes:
-              - enable_permissive
-
-          - identifier: enable_permissive
-            unified_job_template: "SELinux - Enable Permissive"
-            organization: "{{ organization }}"
-            success_nodes:
-              - snapshot_permissive
-
-          - identifier: snapshot_permissive
-            unified_job_template: "SELinux - Snapshot Permissive"
-            organization: "{{ organization }}"
-            success_nodes:
-              - collect_avc_logs
-
-          - identifier: collect_avc_logs
-            unified_job_template: "SELinux - Collect AVC Logs"
-            organization: "{{ organization }}"
-            success_nodes:
-              - ai_analysis
-
-          - identifier: ai_analysis
-            unified_job_template: "SELinux - AI Analysis"
-            organization: "{{ organization }}"
-            success_nodes:
-              - generate_report
-
-          - identifier: generate_report
-            unified_job_template: "SELinux - Generate Report"
-            organization: "{{ organization }}"
-            success_nodes:
-              - approve_remediation
-
-          - identifier: approve_remediation
-            approval_node:
-              name: "Approve SELinux Remediation"
-              timeout: 0
-            organization: "{{ organization }}"
-            success_nodes:
-              - apply_remediation
-
-          - identifier: apply_remediation
-            unified_job_template: "SELinux - Apply Remediation"
-            organization: "{{ organization }}"
-
-      - name: "SELinux Orchestrated Remediation"
-        description: "Orchestrator-triggered workflow: AI analysis, report, approval, and remediation"
-        organization: "{{ organization }}"
-        simplified_workflow_nodes:
-          - identifier: ai_analysis
-            unified_job_template: "SELinux - AI Analysis"
-            organization: "{{ organization }}"
-            success_nodes:
-              - generate_report
-
-          - identifier: generate_report
-            unified_job_template: "SELinux - Generate Report"
-            organization: "{{ organization }}"
-            success_nodes:
-              - approve_remediation
-
-          - identifier: approve_remediation
-            approval_node:
-              name: "Review SELinux Report"
-              description: "Review the AI analysis in the Google Sheet before approving remediation"
-              timeout: 0
-            organization: "{{ organization }}"
-            success_nodes:
-              - apply_remediation
-
-          - identifier: apply_remediation
-            unified_job_template: "SELinux - Apply Remediation"
-            organization: "{{ organization }}"
-
   roles:
     - infra.aap_configuration.dispatch
 
@@ -386,10 +264,10 @@
           Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
           Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}, {{ orchestrator_credential_name }}
           Job Templates: 11
-          Workflows: SELinux Automated Remediation, SELinux Full Pipeline, SELinux Orchestrated Remediation
+          Workflows: none (managed by Automation Orchestrator)
 
           Next steps:
           1. Verify credentials in AAP UI (add SSH key / vault password / orchestrator password if not set)
           2. Sync the project in AAP
-          3. Configure Orchestrator workflow with webhook /api/v1/webhooks/selinux
-          4. Run "SELinux Full Pipeline" to provision VM, or "SELinux - Collect and Notify" for Orchestrator flow
+          3. Run: bash orchestrator/setup.sh  (creates Orchestrator workflow)
+          4. Launch "SELinux - Collect and Notify" to trigger the Orchestrator flow

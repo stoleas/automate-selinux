@@ -10,7 +10,7 @@
 
 eda_activations:
   - name: "SELinux Monitor"
-    description: "Event stream listener that triggers SELinux analysis and Orchestrator forwarding"
+    description: "Event stream listener that forwards SELinux events to Automation Orchestrator"
     rulebook: rulebooks/selinux-monitor.yml
     decision_environment: "Default EDA DE"
     project: "automate-selinux"
@@ -29,7 +29,6 @@ eda_activations:
 #     -d '{"action": "selinux_analysis", "host": "selinux-demo", "avc_count": "5", "timestamp": "2026-01-01T00:00:00Z"}' \
 #     "https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/b86e11ce-d4e0-45bb-a867-9ab79f7c32ad/post/"
 #
-# Actions (via event.payload.action):
+# Action (via event.payload.action):
 #   selinux_analysis  - Forward to Orchestrator via job template
-#   analyze_selinux   - Launch SELinux Automated Remediation workflow
-#   full_pipeline     - Launch SELinux Full Pipeline workflow
+#                       Orchestrator runs: AI Analysis -> Report -> Approval -> Remediation

@@ -15,16 +15,3 @@
             extra_vars:
               orchestrator_event: "{{ event }}"
 
-    - name: Launch SELinux analysis on webhook trigger (direct)
-      condition: event.payload.action == "analyze_selinux"
-      action:
-        run_workflow_template:
-          name: "SELinux Automated Remediation"
-          organization: Default
-
-    - name: Launch full pipeline on provision trigger (direct)
-      condition: event.payload.action == "full_pipeline"
-      action:
-        run_workflow_template:
-          name: "SELinux Full Pipeline"
-          organization: Default
