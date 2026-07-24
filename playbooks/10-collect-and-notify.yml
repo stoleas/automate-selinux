@@ -38,14 +38,21 @@
   tags:
     - notify
   tasks:
-    - name: Read AVC denials count
+    - name: Read AVC denials
       ansible.builtin.slurp:
         src: "{{ report_output_dir }}/avc-denials.log"
       register: _avc_file
 
-    - name: Count AVC denial lines
+    - name: Read audit2allow suggestions
+      ansible.builtin.slurp:
+        src: "{{ report_output_dir }}/audit2allow-suggestions.txt"
+      register: _audit2allow_file
+      failed_when: false
+
+    - name: Set event payload facts
       ansible.builtin.set_fact:
-        _avc_count: "{{ (_avc_file.content | b64decode).split('\n') | select | length }}"
+        _avc_text: "{{ _avc_file.content | b64decode }}"
+        _audit2allow_text: "{{ (_audit2allow_file.content | b64decode) if (_audit2allow_file.content is defined) else '' }}"
 
     - name: Send SELinux analysis event to EDA
       ansible.builtin.uri:
@@ -55,7 +62,9 @@
         body:
           action: selinux_analysis
           host: "{{ vm_name | default('selinux-demo') }}"
-          avc_count: "{{ _avc_count }}"
+          avc_count: "{{ _avc_text.split('\n') | select | length }}"
+          avc_denials: "{{ _avc_text }}"
+          audit2allow_output: "{{ _audit2allow_text }}"
           timestamp: "{{ ansible_date_time.iso8601 }}"
         headers:
           Content-Type: application/json

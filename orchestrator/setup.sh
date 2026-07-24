@@ -102,11 +102,25 @@ else
   ok "Found — $AAP_CRED_ID"
 fi
 
-# ── Part 3: Look up AAP job template IDs ─────────────────────────────────────
+# ── Part 3: LLM integration for native AI analysis ───────────────────────────
+step "LLM integration"
+LLM_INT_ID=$(orch "$ORCHESTRATOR_URL/api/v1/integrations" | \
+  python3 -c "
+import sys, json
+ints = json.load(sys.stdin).get('resources', [])
+llm = [i['id'] for i in ints if i.get('integration_type') == 'llm_provider']
+print(llm[0] if llm else '')
+" 2>/dev/null)
+[[ -z "$LLM_INT_ID" ]] && die "No LLM provider integration found — create one in Orchestrator first"
+ok "LLM integration: $LLM_INT_ID"
+
+LLM_CRED_ID=$(orch "$ORCHESTRATOR_URL/api/v1/integrations/$LLM_INT_ID" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin).get('management_credential_id',''))" 2>/dev/null)
+[[ -z "$LLM_CRED_ID" ]] && die "LLM integration has no credential"
+ok "LLM credential: $LLM_CRED_ID"
+
+# ── Part 4: Look up AAP job template IDs ─────────────────────────────────────
 step "Discovering AAP job template IDs"
-AI_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - AI Analysis")
-[[ -z "$AI_JT_ID" ]] && die "Job template 'SELinux - AI Analysis' not found — run controller/setup.yml first"
-ok "AI Analysis JT: $AI_JT_ID"
 
 REPORT_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Generate Report")
 [[ -z "$REPORT_JT_ID" ]] && die "Job template 'SELinux - Generate Report' not found"
@@ -116,7 +130,7 @@ REMEDIATE_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - App
 [[ -z "$REMEDIATE_JT_ID" ]] && die "Job template 'SELinux - Apply Remediation' not found"
 ok "Apply Remediation JT: $REMEDIATE_JT_ID"
 
-# ── Part 4: Create and publish workflow ──────────────────────────────────────
+# ── Part 5: Create and publish workflow ──────────────────────────────────────
 step "Creating Orchestrator workflow"
 WF_ID=$(orch_id_by_name /api/v1/workflows "SELinux Remediation Workflow")
 if [[ -n "$WF_ID" ]]; then
@@ -128,13 +142,13 @@ with open('$SCRIPT_DIR/workflow-definition.json') as f:
     d = json.load(f)
 for node in d['workflow_definition']['nodes']:
     cfg = node['config']
-    if 'credential_id' in cfg:
+    if node['type'] == 'agentic':
+        cfg['credential_id'] = '$LLM_CRED_ID'
+        cfg['integration_id'] = '$LLM_INT_ID'
+    elif node['type'] == 'aap_job_template':
         cfg['credential_id'] = '$AAP_CRED_ID'
-    if 'job_template_id' in cfg:
         name = node['name']
-        if 'Analysis' in name:
-            cfg['job_template_id'] = $AI_JT_ID
-        elif 'Report' in name:
+        if 'Report' in name:
             cfg['job_template_id'] = $REPORT_JT_ID
         elif 'Remediation' in name:
             cfg['job_template_id'] = $REMEDIATE_JT_ID
@@ -159,10 +173,11 @@ green "  SELinux Orchestrator workflow ready!"
 green "═══════════════════════════════════════════════"
 echo "  Workflow ID:           $WF_ID"
 echo "  Webhook path:          selinux"
-echo "  AI Analysis JT:        $AI_JT_ID"
+echo "  AI Analysis:           native (agentic node, LLM: $LLM_INT_ID)"
 echo "  Generate Report JT:    $REPORT_JT_ID"
 echo "  Apply Remediation JT:  $REMEDIATE_JT_ID"
 echo "  AAP Credential:        $AAP_CRED_ID"
+echo "  LLM Credential:        $LLM_CRED_ID"
 echo
 echo "Trigger via EDA event stream:"
 echo "  curl -k -u selinux:redhat123 -X POST \\"
