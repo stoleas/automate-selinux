@@ -1,24 +1,35 @@
 ---
 # EDA Controller Rulebook Activation Configuration
-# Configure via EDA Controller UI or API.
+# Uses event streams (AAP 2.7 pattern) for external webhook ingestion.
+#
+# Objects created via EDA Controller API (see below) or UI:
+#   1. Event stream credential (Basic auth)
+#   2. Event stream "selinux-event-stream"
+#   3. Project "automate-selinux" (syncs rulebook from git)
+#   4. Activation "SELinux Monitor" (links project + event stream)
 
 eda_activations:
   - name: "SELinux Monitor"
-    description: "Webhook listener that triggers SELinux analysis workflow"
+    description: "Event stream listener that triggers SELinux analysis and Orchestrator forwarding"
     rulebook: rulebooks/selinux-monitor.yml
-    decision_environment: "Default Decision Environment"
+    decision_environment: "Default EDA DE"
     project: "automate-selinux"
-    restart_policy: always
+    restart_policy: on-failure
     enabled: true
-    extra_vars:
-      webhook_port: 5000
+    event_streams:
+      - name: selinux-event-stream
+        source_name: selinux-event-stream
 
-# Trigger the webhook with:
-#   curl -X POST http://<eda-controller>:5000/endpoint \
-#     -H "Content-Type: application/json" \
-#     -d '{"action": "analyze_selinux"}'
+# Event stream URL (after activation is created):
+#   https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/<uuid>/post/
 #
-# Or for the full pipeline:
-#   curl -X POST http://<eda-controller>:5000/endpoint \
+# Trigger with:
+#   curl -k -u selinux:redhat123 -X POST \
 #     -H "Content-Type: application/json" \
-#     -d '{"action": "full_pipeline"}'
+#     -d '{"action": "selinux_analysis", "host": "selinux-demo", "avc_count": "5", "timestamp": "2026-01-01T00:00:00Z"}' \
+#     "<event_stream_url>"
+#
+# Actions (via event.payload.action):
+#   selinux_analysis  - Forward to Orchestrator via job template
+#   analyze_selinux   - Launch SELinux Automated Remediation workflow
+#   full_pipeline     - Launch SELinux Full Pipeline workflow

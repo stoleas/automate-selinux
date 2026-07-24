@@ -1,10 +1,9 @@
 ---
-- name: SELinux Automated Remediation Trigger
+- name: SELinux Event Stream Monitor
   hosts: all
   sources:
-    - ansible.eda.webhook:
-        host: 0.0.0.0
-        port: 5000
+    - ansible.eda.generic:
+        source_name: selinux-event-stream
   rules:
     - name: Forward SELinux analysis to Orchestrator
       condition: event.payload.action == "selinux_analysis"
