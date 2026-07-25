@@ -26,9 +26,10 @@
 
 # --- Collect AVC denials ---
 
-- name: Gather raw AVC denials
+- name: Gather raw AVC denials (deduplicated)
   ansible.builtin.shell: >
-    grep 'type=AVC' /var/log/audit/audit.log || echo "No AVC denials found"
+    grep 'type=AVC' /var/log/audit/audit.log |
+    awk -F'): ' '!seen[$2]++' || echo "No AVC denials found"
   register: _avc_raw
   changed_when: false
 
