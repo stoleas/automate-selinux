@@ -5,18 +5,27 @@
   tags:
     - collect
   tasks:
+    - name: Populate ARP cache via broadcast ping
+      ansible.builtin.shell: >
+        ping -b -c 3 -w 5
+        $(ip -4 addr show {{ vm_bridge }} | grep -oP '(?<=brd )\d+\.\d+\.\d+\.\d+')
+        2>/dev/null || true
+      changed_when: false
+
     - name: Discover VM IP address
       ansible.builtin.shell: >
         virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
       register: _vm_ip
+      retries: 6
+      delay: 5
+      until: _vm_ip.stdout | trim | length > 0
       changed_when: false
-      failed_when: _vm_ip.stdout | trim | length == 0
 
     - name: Add VM to in-memory inventory
       ansible.builtin.add_host:
         name: "{{ vm_name }}"
         ansible_host: "{{ _vm_ip.stdout | trim }}"
-        ansible_user: "{{ vm_user_name | default('equail') }}"
+        ansible_user: "{{ vm_user_name | default('ansible') }}"
         groups: rhel_vms
 
 - name: Collect AVC denials and audit2allow output
