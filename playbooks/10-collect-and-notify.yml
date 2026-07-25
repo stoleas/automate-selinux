@@ -60,5 +60,5 @@
           === EDA Notification Sent ===
           Endpoint: {{ eda_webhook_url }}
           Action: selinux_analysis
-          AVC denials: {{ _avc_count }}
+          AVC denials: {{ _avc_text.split('\n') | select | length }}
           Response: {{ _eda_response.status }}
