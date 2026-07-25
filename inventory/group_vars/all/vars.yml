@@ -1,24 +1,36 @@
 ---
-vertex_ai_proxy_url: "http://192.168.86.11:8787"
+# ── AI / LLM ────────────────────────────────────────────────────────────────
+# OpenAI-compatible proxy URL (e.g. "http://my-proxy:8787")
+vertex_ai_proxy_url: ""
 
+# ── VM Settings ─────────────────────────────────────────────────────────────
 vm_name: "selinux-demo"
 vm_bridge: "bridge0"
 vm_vcpus: 2
 vm_memory_mb: 4096
 vm_disk_gb: 20
-rhel_iso_path: "/home/equail/Downloads/iso/rhel-10.2-x86_64-boot.iso"
+rhel_iso_path: "/var/lib/libvirt/images/rhel-10.2-x86_64-boot.iso"
 
+# ── SELinux ─────────────────────────────────────────────────────────────────
 selinux_policy: "targeted"
 selinux_policy_module_name: "selinux_demo_policy"
-observation_period_minutes: 5
+observation_period_minutes: 0
 
-report_output_dir: "/home/equail/Projects/lightwell/automate-selinux/reports"
+report_output_dir: "{{ playbook_dir }}/../reports"
 
-orchestrator_url: "https://automa-d61a1901-automation-orchestrator-automation-orchestrator.apps.sno.stoleas.home"
-eda_webhook_url: "https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/b86e11ce-d4e0-45bb-a867-9ab79f7c32ad/post/"
+# ── Automation Orchestrator ─────────────────────────────────────────────────
+# e.g. "https://orchestrator.example.com"
+orchestrator_url: ""
+
+# ── EDA Event Stream ────────────────────────────────────────────────────────
+# Set aap_hostname and eda_event_stream_id to build the webhook URL.
+aap_hostname: ""
+eda_event_stream_id: ""
+eda_webhook_url: "https://{{ aap_hostname }}/eda-event-streams/api/eda/v1/external_event_stream/{{ eda_event_stream_id }}/post/"
 eda_webhook_user: "selinux"
 eda_webhook_password: "{{ vault_eda_webhook_password }}"
 
+# ── Secrets (vault-encrypted) ──────────────────────────────────────────────
 vm_root_password: "{{ vault_vm_root_password }}"
 vm_user_password: "{{ vault_vm_user_password }}"
 rhsm_username: "{{ vault_rhsm_username }}"
