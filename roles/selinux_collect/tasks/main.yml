@@ -1,11 +1,4 @@
 ---
-# --- Optional observation period ---
-
-- name: Wait for observation period ({{ observation_period_minutes }} minutes)
-  ansible.builtin.pause:
-    minutes: "{{ observation_period_minutes }}"
-  when: observation_period_minutes | int > 0
-
 # --- Exercise demo app to ensure AVC denials are generated ---
 
 - name: Ensure httpd is running
