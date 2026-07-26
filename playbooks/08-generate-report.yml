@@ -19,11 +19,11 @@
 
     - name: Strip markdown code fences if present
       ansible.builtin.set_fact:
-        _ai_json: "{{ _ai_raw | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') }}"
+        _ai_clean: "{{ _ai_raw | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') }}"
 
     - name: Parse AI analysis JSON
       ansible.builtin.set_fact:
-        selinux_analysis: "{{ _ai_json | from_json }}"
+        selinux_analysis: "{{ _ai_clean if (_ai_clean is mapping) else (_ai_clean | from_json) }}"
 
     - name: Ensure report directory exists
       ansible.builtin.file:
