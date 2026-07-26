@@ -9,9 +9,17 @@
   become: false
   failed_when: false
 
-- name: Resolve AI analysis (prefer file, fall back to workflow stats)
+- name: Extract raw AI text (prefer file, fall back to extra var)
   ansible.builtin.set_fact:
-    selinux_analysis: "{{ (_analysis_file.content | b64decode | from_json) if (_analysis_file.content is defined) else (selinux_analysis_json | from_json) }}"
+    _ai_raw: "{{ (_analysis_file.content | b64decode) if (_analysis_file.content is defined) else (selinux_analysis_json | default('{}')) }}"
+
+- name: Strip markdown code fences if present
+  ansible.builtin.set_fact:
+    _ai_json: "{{ _ai_raw | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') }}"
+
+- name: Parse AI analysis JSON
+  ansible.builtin.set_fact:
+    selinux_analysis: "{{ _ai_json | from_json }}"
 
 - name: Display remediation plan
   ansible.builtin.debug:
