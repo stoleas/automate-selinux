@@ -5,17 +5,22 @@
   tags:
     - remediate
   tasks:
-    - name: Discover VM IP address
+    - name: Discover VM IP address via libvirt
       ansible.builtin.shell: >
         virsh domifaddr {{ vm_name }} --source arp | grep -oP '\d+\.\d+\.\d+\.\d+'
       register: _vm_ip
       changed_when: false
-      failed_when: _vm_ip.stdout | trim | length == 0
+      failed_when: false
+
+    - name: Fall back to inventory IP if libvirt discovery failed
+      ansible.builtin.set_fact:
+        _vm_ip_resolved: "{{ (_vm_ip.stdout | trim) if (_vm_ip.stdout | trim | length > 0) else (hostvars[vm_name].ansible_host | default('')) }}"
+      failed_when: _vm_ip_resolved | length == 0
 
     - name: Add VM to in-memory inventory
       ansible.builtin.add_host:
         name: "{{ vm_name }}"
-        ansible_host: "{{ _vm_ip.stdout | trim }}"
+        ansible_host: "{{ _vm_ip_resolved }}"
         ansible_user: "{{ vm_user_name | default('equail') }}"
         groups: rhel_vms
 
