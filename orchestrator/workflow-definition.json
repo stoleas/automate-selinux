@@ -21,9 +21,9 @@
         "name": "AI Analysis",
         "config": {
           "model": "claude-haiku-4-5",
-          "prompt": "Analyze these SELinux AVC denials from a RHEL 10.2 system running httpd with content at /srv/webapp/ (non-standard). System was moved from disabled to permissive mode.\n\nAVC Denials:\n${trigger.payload.payload.payload.avc_denials}\n\naudit2allow output:\n${trigger.payload.payload.payload.audit2allow_output}\n\nFor each unique denial, determine the correct fix. Prefer relabeling (semanage fcontext + restorecon) over booleans or custom policy modules. audit2allow suggestions are often overly permissive.\n\nReturn JSON only:\n{\"summary\":\"...\",\"findings\":[{\"denial\":\"what was denied\",\"source_type\":\"e.g. httpd_t\",\"target_type\":\"e.g. var_t\",\"target_path\":\"/path\",\"permission\":\"e.g. read\",\"recommendation\":\"human-readable fix\",\"remediation\":{\"type\":\"fcontext|boolean|port|module\",\"selinux_type\":\"target type\",\"path_spec\":\"regex for semanage\",\"boolean_name\":\"\",\"boolean_value\":\"\"}}],\"audit2allow_assessment\":\"what it got right/wrong\"}",
-          "credential_id": "PLACEHOLDER_LLM_CREDENTIAL_ID",
-          "integration_id": "PLACEHOLDER_LLM_INTEGRATION_ID"
+          "prompt": "Analyze SELinux AVC denials from RHEL 10.2 (httpd, /srv/webapp/, permissive mode).\n\nAVC Denials:\n${trigger.payload.payload.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.payload.payload.audit2allow_output}\n\nGroup duplicate denials. Prefer semanage fcontext over booleans/modules.\n\nReturn ONLY minified JSON (no markdown, no code fences):\n{\"summary\":\"brief\",\"findings\":[{\"denial\":\"short desc\",\"source_type\":\"\",\"target_type\":\"\",\"target_path\":\"\",\"permission\":\"\",\"recommendation\":\"short fix\",\"remediation\":{\"type\":\"fcontext|boolean|port|module\",\"selinux_type\":\"\",\"path_spec\":\"\",\"boolean_name\":\"\",\"boolean_value\":\"\"}}],\"audit2allow_assessment\":\"brief\"}",
+          "credential_id": "962cc0a4-4cb1-4b7f-ab0d-7536e216f10e",
+          "integration_id": "4d12c7fb-1c34-491b-bd56-7aaa249ce3c4"
         }
       },
       {
@@ -31,11 +31,12 @@
         "type": "aap_job_template",
         "name": "Generate Report",
         "config": {
-          "job_template_id": "PLACEHOLDER_GENERATE_REPORT_JT_ID",
+          "job_template_id": 22,
           "extra_vars": {
-            "trigger_payload": "${trigger.payload}"
+            "trigger_payload": "${trigger.payload}",
+            "selinux_analysis_json": "${n1.result.content}"
           },
-          "credential_id": "PLACEHOLDER_AAP_CREDENTIAL_ID"
+          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
         }
       },
       {
@@ -51,11 +52,12 @@
         "type": "aap_job_template",
         "name": "Apply Remediation",
         "config": {
-          "job_template_id": "PLACEHOLDER_APPLY_REMEDIATION_JT_ID",
+          "job_template_id": 23,
           "extra_vars": {
-            "trigger_payload": "${trigger.payload}"
+            "trigger_payload": "${trigger.payload}",
+            "selinux_analysis_json": "${n1.result.content}"
           },
-          "credential_id": "PLACEHOLDER_AAP_CREDENTIAL_ID"
+          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
         }
       }
     ],
