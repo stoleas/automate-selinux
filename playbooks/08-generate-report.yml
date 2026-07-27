@@ -39,6 +39,92 @@
         mode: "0644"
       failed_when: false
 
+    - name: Read rendered report for display
+      ansible.builtin.slurp:
+        src: "{{ report_output_dir }}/selinux-report.md"
+      register: _report_file
+      failed_when: false
+
+    - name: Display full report in job output
+      ansible.builtin.debug:
+        msg: "{{ (_report_file.content | b64decode) if (_report_file.content is defined) else 'Report rendering failed — check template input' }}"
+
+    - name: Pass report to Orchestrator via set_stats
+      ansible.builtin.set_stats:
+        data:
+          selinux_report_md: "{{ _report_file.content | b64decode }}"
+        per_host: false
+      when: _report_file.content is defined
+
+    - name: Capture timestamp for archive filename
+      ansible.builtin.set_fact:
+        _report_timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.time | regex_replace(':', '-') }}"
+
     - name: Display report location
       ansible.builtin.debug:
         msg: "Report generated: {{ report_output_dir }}/selinux-report.md"
+
+- name: Publish report to Obsidian vault via VM git repo
+  hosts: "{{ vm_name | default('selinux-demo') }}"
+  gather_facts: false
+  become: false
+  tags:
+    - report
+  vars:
+    _obsidian_repo: /home/equail/projects/obsidian
+    _report_dir: "{{ _obsidian_repo }}/Areas/selinux-lab/reports"
+    _timestamp_file: "{{ hostvars['localhost']['_report_timestamp'] }}.report.md"
+  tasks:
+    - name: Read rendered report from controller
+      ansible.builtin.set_fact:
+        _report_content: "{{ hostvars['localhost']['_report_file']['content'] | b64decode }}"
+      when: hostvars['localhost']['_report_file']['content'] is defined
+
+    - name: Ensure report directory exists in obsidian repo
+      ansible.builtin.file:
+        path: "{{ _report_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Pull latest obsidian repo
+      ansible.builtin.command:
+        cmd: git pull --ff-only
+        chdir: "{{ _obsidian_repo }}"
+      register: _git_pull
+      changed_when: "'Already up to date' not in _git_pull.stdout"
+
+    - name: Write timestamped report to obsidian repo
+      ansible.builtin.copy:
+        dest: "{{ _report_dir }}/{{ _timestamp_file }}"
+        content: "{{ _report_content }}"
+        mode: "0644"
+      register: _report_write
+
+    - name: Git add report
+      ansible.builtin.command:
+        cmd: "git add {{ _report_dir }}/{{ _timestamp_file }}"
+        chdir: "{{ _obsidian_repo }}"
+      when: _report_write.changed
+
+    - name: Git commit report
+      ansible.builtin.command:
+        cmd: "git commit -m 'SELinux report: {{ _timestamp_file }}'"
+        chdir: "{{ _obsidian_repo }}"
+      register: _git_commit
+      changed_when: "'nothing to commit' not in _git_commit.stdout"
+      when: _report_write.changed
+
+    - name: Git push report
+      ansible.builtin.command:
+        cmd: git push origin main
+        chdir: "{{ _obsidian_repo }}"
+      register: _git_push
+      changed_when: _git_push.rc == 0
+      when: _git_commit.changed
+
+    - name: Display publish result
+      ansible.builtin.debug:
+        msg: >-
+          Report published to Obsidian:
+          {{ _report_dir }}/{{ _timestamp_file }}
+          (git {{ 'pushed' if _git_push.changed | default(false) else 'no changes' }})
