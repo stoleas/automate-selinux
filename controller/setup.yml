@@ -218,6 +218,7 @@
         project: "{{ project_name }}"
         playbook: playbooks/08-generate-report.yml
         inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
         credentials:
           - "{{ vault_credential_name }}"
           - "{{ machine_credential_name }}"

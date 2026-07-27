@@ -71,7 +71,7 @@
     - name: Capture report content for second play
       ansible.builtin.set_fact:
         _report_md: "{{ _report_file.content | b64decode }}"
-        _report_timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.time | regex_replace(':', '-') }}"
+        _report_timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.hour }}{{ ansible_date_time.minute }}"
 
     - name: Pass report to Orchestrator via set_stats
       ansible.builtin.set_stats:
