@@ -220,6 +220,7 @@
         inventory: "{{ inventory_name }}"
         credentials:
           - "{{ vault_credential_name }}"
+          - "{{ machine_credential_name }}"
 
       - name: "SELinux - Apply Remediation"
         description: "Apply AI-recommended SELinux remediations to target VM"

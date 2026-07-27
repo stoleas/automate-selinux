@@ -58,7 +58,9 @@ job_templates:
     description: "Generate markdown report from AI analysis"
     playbook: playbooks/08-generate-report.yml
     inventory: "SELinux Lab"
-    credentials: []
+    credentials:
+      - "SELinux Lab Vault Credential"
+      - "SELinux Lab Machine Credential"
 
   - name: "SELinux - Apply Remediation"
     description: "Apply AI-recommended SELinux remediations to target VM"
