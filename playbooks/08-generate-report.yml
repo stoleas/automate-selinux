@@ -1,4 +1,4 @@
----
+--- 
 - name: Generate SELinux analysis report
   hosts: localhost
   connection: local
@@ -13,28 +13,16 @@
       register: _analysis_file
       failed_when: false
 
-    - name: Extract raw AI text (prefer file, fall back to extra var)
+    - name: Normalize AI analysis to dict
       ansible.builtin.set_fact:
-        _ai_raw: >-
-          {{
-            (_analysis_file.content | b64decode)
-            if (_analysis_file.content is defined)
-            else (selinux_analysis_json | default({}) | to_json)
-          }}
-
-    - name: Strip markdown code fences if present (string only)
-      ansible.builtin.set_fact:
-        _ai_clean: "{{ _ai_raw | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') }}"
-      when: _ai_raw | type_debug == 'string'
-
-    - name: Use raw value if already parsed (dict/list)
-      ansible.builtin.set_fact:
-        _ai_clean: "{{ _ai_raw }}"
-      when: _ai_raw | type_debug != 'string'
-
-    - name: Parse AI analysis JSON
-      ansible.builtin.set_fact:
-        selinux_analysis: "{{ _ai_clean if (_ai_clean | type_debug == 'dict') else (_ai_clean | from_json) }}"
+        selinux_analysis: >-
+          {%- if _analysis_file.content is defined -%}
+          {{ _analysis_file.content | b64decode | from_json }}
+          {%- elif selinux_analysis_json is mapping -%}
+          {{ selinux_analysis_json }}
+          {%- else -%}
+          {{ (selinux_analysis_json | default('{}')) | regex_replace('(?s)^```json\s*', '') | regex_replace('(?s)\s*```\s*$', '') | from_json }}
+          {%- endif -%}
 
     - name: Ensure report directory exists
       ansible.builtin.file:
@@ -48,28 +36,26 @@
         src: "{{ playbook_dir }}/../templates/selinux-report.md.j2"
         dest: "{{ report_output_dir }}/selinux-report.md"
         mode: "0644"
-      failed_when: false
 
     - name: Read rendered report for display
       ansible.builtin.slurp:
         src: "{{ report_output_dir }}/selinux-report.md"
       register: _report_file
-      failed_when: false
 
     - name: Display full report in job output
       ansible.builtin.debug:
-        msg: "{{ (_report_file.content | b64decode) if (_report_file.content is defined) else 'Report rendering failed — check template input' }}"
+        msg: "{{ _report_file.content | b64decode }}"
+
+    - name: Capture report content for second play
+      ansible.builtin.set_fact:
+        _report_md: "{{ _report_file.content | b64decode }}"
+        _report_timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.time | regex_replace(':', '-') }}"
 
     - name: Pass report to Orchestrator via set_stats
       ansible.builtin.set_stats:
         data:
-          selinux_report_md: "{{ _report_file.content | b64decode }}"
+          selinux_report_md: "{{ _report_md }}"
         per_host: false
-      when: _report_file.content is defined
-
-    - name: Capture timestamp for archive filename
-      ansible.builtin.set_fact:
-        _report_timestamp: "{{ ansible_date_time.date }}_{{ ansible_date_time.time | regex_replace(':', '-') }}"
 
     - name: Display report location
       ansible.builtin.debug:
@@ -88,17 +74,14 @@
     _timestamp_file: "{{ _report_timestamp }}.report.md"
     _vm_host: "{{ vm_name | default('selinux-demo') }}"
   tasks:
-    - name: Read rendered report from controller
-      ansible.builtin.set_fact:
-        _report_content: "{{ _report_file.content | b64decode }}"
-      when: _report_file.content is defined
-
     - name: Ensure report directory exists in obsidian repo on VM
       ansible.builtin.file:
         path: "{{ _report_dir }}"
         state: directory
         mode: "0755"
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Pull latest obsidian repo on VM
       ansible.builtin.command:
@@ -107,14 +90,18 @@
       register: _git_pull
       changed_when: "'Already up to date' not in _git_pull.stdout"
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Write timestamped report to obsidian repo on VM
       ansible.builtin.copy:
         dest: "{{ _report_dir }}/{{ _timestamp_file }}"
-        content: "{{ _report_content }}"
+        content: "{{ _report_md }}"
         mode: "0644"
       register: _report_write
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Git add report on VM
       ansible.builtin.command:
@@ -122,6 +109,8 @@
         chdir: "{{ _obsidian_repo }}"
       when: _report_write.changed
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Git commit report on VM
       ansible.builtin.command:
@@ -131,6 +120,8 @@
       changed_when: "'nothing to commit' not in _git_commit.stdout"
       when: _report_write.changed
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Git push report from VM
       ansible.builtin.command:
@@ -140,6 +131,8 @@
       changed_when: _git_push.rc == 0
       when: _git_commit.changed
       delegate_to: "{{ _vm_host }}"
+      become: false
+      remote_user: equail
 
     - name: Display publish result
       ansible.builtin.debug:
