@@ -12,17 +12,38 @@
         src: "{{ report_output_dir }}/ai-analysis.json"
       register: _analysis_file
       failed_when: false
+      ignore_errors: true
 
-    - name: Normalize AI analysis to dict
+    - name: Debug available inputs
+      ansible.builtin.debug:
+        msg:
+          - "file_content defined: {{ _analysis_file.content is defined }}"
+          - "file_failed: {{ _analysis_file.failed | default(false) }}"
+          - "selinux_analysis_json type: {{ selinux_analysis_json | default('UNDEFINED') | type_debug }}"
+          - "selinux_analysis_json value (first 200): {{ (selinux_analysis_json | default('UNDEFINED')) | string | truncate(200) }}"
+
+    - name: Set AI analysis from extra var (string input)
       ansible.builtin.set_fact:
-        selinux_analysis: >-
-          {%- if _analysis_file.content is defined -%}
-          {{ _analysis_file.content | b64decode | from_json }}
-          {%- elif selinux_analysis_json is mapping -%}
-          {{ selinux_analysis_json }}
-          {%- else -%}
-          {{ (selinux_analysis_json | default('{}')) | regex_replace('(?s)^```json\s*', '') | regex_replace('(?s)\s*```\s*$', '') | from_json }}
-          {%- endif -%}
+        selinux_analysis: "{{ (selinux_analysis_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '')) | from_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json | type_debug == 'str'
+
+    - name: Set AI analysis from extra var (dict input)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ selinux_analysis_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json is mapping
+
+    - name: Set AI analysis from file (fallback)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ _analysis_file.content | b64decode | from_json }}"
+      when: selinux_analysis_json is not defined and _analysis_file.content is defined and not (_analysis_file.failed | default(true))
+
+    - name: Set empty analysis (no data available)
+      ansible.builtin.set_fact:
+        selinux_analysis:
+          summary: "No AI analysis data available"
+          findings: []
+          audit2allow_assessment: "N/A"
+      when: selinux_analysis is not defined
 
     - name: Ensure report directory exists
       ansible.builtin.file:
