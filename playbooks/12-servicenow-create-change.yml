@@ -153,11 +153,23 @@
       register: _change_response
       when: _assignment_group_sys_id is not defined
 
-    - name: Set change ticket facts
+    - name: Debug change response
+      ansible.builtin.debug:
+        var: _change_response
+      when: _change_response is defined
+
+    - name: Set change ticket facts from JSON response
       ansible.builtin.set_fact:
-        _change_number: "{{ _change_response.json.result.number | default(_change_response.json.result[0].number) }}"
-        _change_sys_id: "{{ _change_response.json.result.sys_id | default(_change_response.json.result[0].sys_id) }}"
-      when: _change_response is defined and _change_response.json is defined
+        _change_number: "{{ _change_response.json.result.number }}"
+        _change_sys_id: "{{ _change_response.json.result.sys_id }}"
+      when: _change_response.json is defined and _change_response.json.result is defined
+
+    - name: Set change ticket facts from content (fallback)
+      ansible.builtin.set_fact:
+        _change_json: "{{ _change_response.content | from_json }}"
+        _change_number: "{{ (_change_response.content | from_json).result.number }}"
+        _change_sys_id: "{{ (_change_response.content | from_json).result.sys_id }}"
+      when: _change_response.json is not defined and _change_response.content is defined
 
     # ── Display change ticket details ──────────────────────────────────────
     - name: Display change ticket details
