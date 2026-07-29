@@ -104,19 +104,23 @@
         - _assignment_group_sys_id is not defined
 
     # ── Create Normal Change ticket ────────────────────────────────────────
-    - name: Create Normal Change ticket (with assignment group)
+    - name: Create Normal Change ticket
       ansible.builtin.uri:
         url: "{{ servicenow_api_base }}/change_request"
         method: POST
         body_format: json
-        body:
-          type: normal
-          short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
-          description: "{{ _change_description }}"
-          assignment_group: "{{ _assignment_group_sys_id }}"
-          cmdb_ci: "{{ servicenow_ci_sys_id | default('') }}"
-          risk: "3"
-          impact: "2"
+        body: >-
+          {{
+            {
+              "type": "normal",
+              "short_description": "SELinux remediation for " ~ (vm_name | default('selinux-demo')),
+              "description": _change_description,
+              "cmdb_ci": servicenow_ci_sys_id | default(''),
+              "risk": "3",
+              "impact": "2"
+            }
+            | combine({"assignment_group": _assignment_group_sys_id} if _assignment_group_sys_id is defined else {})
+          }}
         headers:
           Accept: application/json
           Content-Type: application/json
@@ -127,49 +131,11 @@
         return_content: true
         status_code: [200, 201]
       register: _change_response
-      when: _assignment_group_sys_id is defined
 
-    - name: Create Normal Change ticket (without assignment group)
-      ansible.builtin.uri:
-        url: "{{ servicenow_api_base }}/change_request"
-        method: POST
-        body_format: json
-        body:
-          type: normal
-          short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
-          description: "{{ _change_description }}"
-          cmdb_ci: "{{ servicenow_ci_sys_id | default('') }}"
-          risk: "3"
-          impact: "2"
-        headers:
-          Accept: application/json
-          Content-Type: application/json
-        user: "{{ servicenow_username }}"
-        password: "{{ servicenow_password }}"
-        force_basic_auth: true
-        validate_certs: false
-        return_content: true
-        status_code: [200, 201]
-      register: _change_response
-      when: _assignment_group_sys_id is not defined
-
-    - name: Debug change response
-      ansible.builtin.debug:
-        var: _change_response
-      when: _change_response is defined
-
-    - name: Set change ticket facts from JSON response
+    - name: Set change ticket facts
       ansible.builtin.set_fact:
-        _change_number: "{{ _change_response.json.result.number }}"
-        _change_sys_id: "{{ _change_response.json.result.sys_id }}"
-      when: _change_response.json is defined and _change_response.json.result is defined
-
-    - name: Set change ticket facts from content (fallback)
-      ansible.builtin.set_fact:
-        _change_json: "{{ _change_response.content | from_json }}"
-        _change_number: "{{ (_change_response.content | from_json).result.number }}"
-        _change_sys_id: "{{ (_change_response.content | from_json).result.sys_id }}"
-      when: _change_response.json is not defined and _change_response.content is defined
+        _change_number: "{{ _change_response.json.result.number | default((_change_response.content | from_json).result.number) }}"
+        _change_sys_id: "{{ _change_response.json.result.sys_id | default((_change_response.content | from_json).result.sys_id) }}"
 
     # ── Display change ticket details ──────────────────────────────────────
     - name: Display change ticket details
