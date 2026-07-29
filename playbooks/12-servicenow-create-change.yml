@@ -31,7 +31,7 @@
     # Note: type_debug returns 'str' not 'string' for string-typed vars.
     - name: Set AI analysis from extra var (string input)
       ansible.builtin.set_fact:
-        selinux_analysis: "{{ (selinux_analysis_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '')) | from_json }}"
+        selinux_analysis: "{{ (selinux_analysis_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') | regex_replace('(?s)\\n</string>\\s*$', '') | regex_replace('(?s)^<string>\\s*', '')) | from_json }}"
       when: selinux_analysis_json is defined and selinux_analysis_json | type_debug in ['str', 'AnsibleUnsafeText'] and selinux_analysis_json | length > 0
 
     - name: Set AI analysis from extra var (dict input)
