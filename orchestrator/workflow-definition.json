@@ -59,7 +59,7 @@
         "config": {
           "job_template_id": 0,
           "extra_vars": {
-            "servicenow_change_sys_id": "${n3a.result.stats.servicenow_change_sys_id}"
+            "servicenow_change_sys_id": "${n3a.artifacts.servicenow_change_sys_id}"
           },
           "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
         }
