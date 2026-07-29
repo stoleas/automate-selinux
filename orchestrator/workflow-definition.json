@@ -1,6 +1,6 @@
 {
   "name": "SELinux Remediation Workflow",
-  "description": "EDA -> AI analysis -> Report -> Human approval -> AAP remediation",
+  "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation",
   "workflow_definition": {
     "schema_version": "2.0.0",
     "name": "SELinux Remediation Workflow",
@@ -40,11 +40,28 @@
         }
       },
       {
-        "id": "n3",
-        "type": "approval",
-        "name": "Review SELinux Report",
+        "id": "n3a",
+        "type": "aap_job_template",
+        "name": "Create ServiceNow Change",
         "config": {
-          "decision_window": 86400
+          "job_template_id": 0,
+          "extra_vars": {
+            "selinux_analysis_json": "${n1.result.content}",
+            "vm_name": "${trigger.payload.payload.payload.host}"
+          },
+          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+        }
+      },
+      {
+        "id": "n3b",
+        "type": "aap_job_template",
+        "name": "Check ServiceNow Approval",
+        "config": {
+          "job_template_id": 0,
+          "extra_vars": {
+            "servicenow_change_sys_id": "${n3a.result.stats.servicenow_change_sys_id}"
+          },
+          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
         }
       },
       {
@@ -59,13 +76,28 @@
           },
           "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
         }
+      },
+      {
+        "id": "n5",
+        "type": "aap_job_template",
+        "name": "Post-Remediation Observation",
+        "config": {
+          "job_template_id": 0,
+          "extra_vars": {
+            "vm_name": "${trigger.payload.payload.payload.host}",
+            "pre_avc_count": "${trigger.payload.payload.payload.avc_count}"
+          },
+          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+        }
       }
     ],
     "edges": [
       { "from": "t1", "to": "n1" },
       { "from": "n1", "to": "n2" },
-      { "from": "n2", "to": "n3" },
-      { "from": "n3", "to": "n4", "from_port": "approved" }
+      { "from": "n2", "to": "n3a" },
+      { "from": "n3a", "to": "n3b" },
+      { "from": "n3b", "to": "n4" },
+      { "from": "n4", "to": "n5" }
     ]
   }
 }

@@ -130,6 +130,18 @@ REMEDIATE_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - App
 [[ -z "$REMEDIATE_JT_ID" ]] && die "Job template 'SELinux - Apply Remediation' not found"
 ok "Apply Remediation JT: $REMEDIATE_JT_ID"
 
+CREATE_CHANGE_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Create ServiceNow Change")
+[[ -z "$CREATE_CHANGE_JT_ID" ]] && die "Job template 'SELinux - Create ServiceNow Change' not found"
+ok "Create ServiceNow Change JT: $CREATE_CHANGE_JT_ID"
+
+CHECK_APPROVAL_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Check ServiceNow Approval")
+[[ -z "$CHECK_APPROVAL_JT_ID" ]] && die "Job template 'SELinux - Check ServiceNow Approval' not found"
+ok "Check ServiceNow Approval JT: $CHECK_APPROVAL_JT_ID"
+
+OBSERVATION_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Post-Remediation Observation")
+[[ -z "$OBSERVATION_JT_ID" ]] && die "Job template 'SELinux - Post-Remediation Observation' not found"
+ok "Post-Remediation Observation JT: $OBSERVATION_JT_ID"
+
 # ── Part 5: Create and publish workflow ──────────────────────────────────────
 step "Creating Orchestrator workflow"
 WF_ID=$(orch_id_by_name /api/v1/workflows "SELinux Remediation Workflow")
@@ -148,10 +160,16 @@ for node in d['workflow_definition']['nodes']:
     elif node['type'] == 'aap_job_template':
         cfg['credential_id'] = '$AAP_CRED_ID'
         name = node['name']
-        if 'Report' in name:
+        if name == 'Generate Report':
             cfg['job_template_id'] = $REPORT_JT_ID
-        elif 'Remediation' in name:
+        elif name == 'Create ServiceNow Change':
+            cfg['job_template_id'] = $CREATE_CHANGE_JT_ID
+        elif name == 'Check ServiceNow Approval':
+            cfg['job_template_id'] = $CHECK_APPROVAL_JT_ID
+        elif name == 'Apply Remediation':
             cfg['job_template_id'] = $REMEDIATE_JT_ID
+        elif name == 'Post-Remediation Observation':
+            cfg['job_template_id'] = $OBSERVATION_JT_ID
 print(json.dumps(d))
 ")
   RESP=$(orch -X POST "$ORCHESTRATOR_URL/api/v1/workflows" -d "$WFDEF")
@@ -175,7 +193,10 @@ echo "  Workflow ID:           $WF_ID"
 echo "  Webhook path:          selinux"
 echo "  AI Analysis:           native (agentic node, LLM: $LLM_INT_ID)"
 echo "  Generate Report JT:    $REPORT_JT_ID"
+echo "  Create Change JT:      $CREATE_CHANGE_JT_ID"
+echo "  Check Approval JT:     $CHECK_APPROVAL_JT_ID"
 echo "  Apply Remediation JT:  $REMEDIATE_JT_ID"
+echo "  Observation JT:        $OBSERVATION_JT_ID"
 echo "  AAP Credential:        $AAP_CRED_ID"
 echo "  LLM Credential:        $LLM_CRED_ID"
 echo
@@ -185,12 +206,5 @@ echo "    -H 'Content-Type: application/json' \\"
 echo "    -d '{\"action\": \"selinux_analysis\", \"host\": \"selinux-demo\"}' \\"
 echo "    'https://aap-aap.apps.sno.stoleas.home/eda-event-streams/api/eda/v1/external_event_stream/b86e11ce-d4e0-45bb-a867-9ab79f7c32ad/post/'"
 echo
-echo "Check pending approvals:"
-echo "  curl -sk -H 'Authorization: Bearer $TOKEN' \\"
-echo "    '$ORCHESTRATOR_URL/api/v1/approvals?status=pending'"
-echo
-echo "Approve:"
-echo "  curl -sk -X PATCH -H 'Authorization: Bearer $TOKEN' \\"
-echo "    -H 'Content-Type: application/json' \\"
-echo "    -d '{\"status\":\"approved\"}' \\"
-echo "    '$ORCHESTRATOR_URL/api/v1/approvals/<id>'"
+echo "Approve via ServiceNow (polling is automatic):"
+echo "  Navigate to ServiceNow → Change → Open → find the SELinux change ticket → Approve"

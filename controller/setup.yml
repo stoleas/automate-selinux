@@ -229,6 +229,7 @@
         project: "{{ project_name }}"
         playbook: playbooks/09-apply-remediation.yml
         inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
         credentials:
           - "{{ machine_credential_name }}"
           - "{{ vault_credential_name }}"
@@ -253,6 +254,36 @@
         credentials:
           - "{{ orchestrator_credential_name }}"
 
+      - name: "SELinux - Create ServiceNow Change"
+        description: "Create a Normal Change ticket in ServiceNow for remediation approval"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/12-servicenow-create-change.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Check ServiceNow Approval"
+        description: "Poll ServiceNow change ticket until approved, rejected, or timeout"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/13-servicenow-check-approval.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Post-Remediation Observation"
+        description: "Re-collect AVCs after remediation, compare to pre-remediation count"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/14-observe-post-remediation.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ machine_credential_name }}"
+
   roles:
     - infra.aap_configuration.dispatch
 
@@ -265,7 +296,7 @@
           Project:    {{ project_name }}
           Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
           Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}, {{ orchestrator_credential_name }}
-          Job Templates: 11
+          Job Templates: 14
           Workflows: none (managed by Automation Orchestrator)
 
           Next steps:

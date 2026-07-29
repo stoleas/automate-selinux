@@ -1,0 +1,52 @@
+---
+- name: Post-remediation AVC observation
+  hosts: "{{ vm_name | default('selinux-demo') }}"
+  become: true
+  tags:
+    - observe
+  tasks:
+    - name: Wait for audit events to flush
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Re-collect AVC denials (deduplicated)
+      ansible.builtin.shell: |
+        grep 'type=AVC' /var/log/audit/audit.log | awk '{
+          match($0, /\{ [^}]+ \}/, perm)
+          match($0, /comm="[^"]*"/, comm)
+          match($0, /scontext=[^ ]*/, sctx)
+          match($0, /tcontext=[^ ]*/, tctx)
+          match($0, /tclass=[^ ]*/, tcls)
+          key = perm[0] SUBSEP comm[0] SUBSEP sctx[0] SUBSEP tctx[0] SUBSEP tcls[0]
+          if (!seen[key]++) print
+        }' || echo "No AVC denials found"
+      register: _post_avc_raw
+      changed_when: false
+
+    - name: Count post-remediation AVCs
+      ansible.builtin.set_fact:
+        _post_avc_count: "{{ _post_avc_raw.stdout_lines | select | length }}"
+
+    - name: Display observation results
+      ansible.builtin.debug:
+        msg: |
+          === Post-Remediation Observation ===
+          Pre-remediation AVC count: {{ pre_avc_count | default('unknown') }}
+          Post-remediation AVC count: {{ _post_avc_count }}
+          {% if pre_avc_count is defined and _post_avc_count | int < pre_avc_count | int %}
+          ✓ AVC denials decreased — remediation is working.
+          {% elif pre_avc_count is defined and _post_avc_count | int == 0 %}
+          ✓ All AVC denials resolved. System is ready for enforcing mode transition.
+          {% else %}
+          ⚠ AVC denials still present. Continue monitoring in permissive mode.
+          {% endif %}
+          SELinux mode: {{ ansible_local.selinux.mode | default('unknown') }}
+          NOTE: System remains in PERMISSIVE mode. Do NOT switch to enforcing without an observation period.
+
+    - name: Pass observation data to Orchestrator
+      ansible.builtin.set_stats:
+        data:
+          post_remediation_avc_count: "{{ _post_avc_count }}"
+          pre_remediation_avc_count: "{{ pre_avc_count | default('unknown') }}"
+          observation_complete: true
+        per_host: false

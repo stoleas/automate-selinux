@@ -30,6 +30,16 @@ eda_webhook_url: "https://{{ aap_hostname }}/eda-event-streams/api/eda/v1/extern
 eda_webhook_user: "selinux"
 eda_webhook_password: "{{ vault_eda_webhook_password }}"
 
+# ── ServiceNow ──────────────────────────────────────────────────────────────
+servicenow_instance: ""  # e.g. "dev12345" — set to your developer instance name
+servicenow_username: "edward.quail@gmail.com"
+servicenow_password: "{{ vault_servicenow_password }}"
+servicenow_api_base: "https://{{ servicenow_instance }}.service-now.com/api/now/table"
+servicenow_change_type: "normal"
+servicenow_assignment_group: ""  # sys_id of the group, discover via API
+servicenow_approval_timeout_minutes: 30  # how long to poll for approval
+servicenow_poll_interval_seconds: 30  # poll frequency
+
 # ── Secrets (vault-encrypted) ──────────────────────────────────────────────
 vm_root_password: "{{ vault_vm_root_password }}"
 vm_user_password: "{{ vault_vm_user_password }}"

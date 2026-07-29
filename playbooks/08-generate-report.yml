@@ -95,6 +95,24 @@
     _timestamp_file: "{{ hostvars['localhost']['_report_timestamp'] }}.report.md"
     _report_md_content: "{{ hostvars['localhost']['_report_md'] }}"
   tasks:
+    - name: Check if obsidian repo exists on VM
+      ansible.builtin.stat:
+        path: "{{ _obsidian_repo }}/.git"
+      register: _obsidian_repo_stat
+
+    - name: Clone obsidian repo if missing (e.g. after snapshot revert)
+      ansible.builtin.command:
+        cmd: "git clone git@github.com:stoleas/obsidian.git {{ _obsidian_repo }}"
+      when: not _obsidian_repo_stat.stat.exists
+      register: _obsidian_clone
+      changed_when: _obsidian_clone.rc == 0
+
+    - name: Set git config on freshly cloned repo
+      ansible.builtin.command:
+        cmd: "git config user.name 'Edward Quail' && git config user.email 'edward.quail@gmail.com'"
+        chdir: "{{ _obsidian_repo }}"
+      when: _obsidian_clone is changed
+
     - name: Ensure report directory exists in obsidian repo
       ansible.builtin.file:
         path: "{{ _report_dir }}"
@@ -107,6 +125,7 @@
         chdir: "{{ _obsidian_repo }}"
       register: _git_pull
       changed_when: "'Already up to date' not in _git_pull.stdout"
+      ignore_errors: true
 
     - name: Write timestamped report to obsidian repo
       ansible.builtin.copy:
@@ -136,10 +155,12 @@
       register: _git_push
       changed_when: _git_push.rc == 0
       when: _git_commit.changed
+      ignore_errors: true
 
     - name: Display publish result
       ansible.builtin.debug:
         msg: >-
           Report published to Obsidian:
           {{ _report_dir }}/{{ _timestamp_file }}
-          (git {{ 'pushed' if _git_push.changed | default(false) else 'no changes' }})
+          (git {{ 'pushed' if _git_push.changed | default(false) else 'no changes' }}
+          {% if _git_push.failed | default(false) %} — WARNING: push failed, report saved locally on VM{% endif %})

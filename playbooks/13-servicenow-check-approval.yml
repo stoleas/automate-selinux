@@ -1,0 +1,89 @@
+---
+# Playbook: 13 - ServiceNow Check Approval
+# Polls a ServiceNow change ticket until it is approved (state 4),
+# closed/rejected (state 7), or the timeout expires.
+#
+# Required extra vars (passed from previous Orchestrator node):
+#   servicenow_change_sys_id            - sys_id of the change ticket to poll
+#   servicenow_api_base                  - ServiceNow REST API base URL
+#   servicenow_username                  - ServiceNow API user
+#   servicenow_password                  - ServiceNow API password
+#   servicenow_approval_timeout_minutes  - overall timeout in minutes
+#   servicenow_poll_interval_seconds     - seconds between poll attempts
+
+- name: Poll ServiceNow change ticket for approval
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tags:
+    - servicenow
+
+  vars:
+    # State name mapping for human-readable output
+    servicenow_state_names:
+      "1": "New"
+      "2": "Assess"
+      "3": "Authorize"
+      "4": "Approved"
+      "5": "Implement"
+      "6": "Review"
+      "7": "Closed"
+
+  tasks:
+
+    - name: Assert servicenow_change_sys_id is defined and non-empty
+      ansible.builtin.assert:
+        that:
+          - servicenow_change_sys_id is defined
+          - servicenow_change_sys_id | trim | length > 0
+        fail_msg: >
+          Required variable 'servicenow_change_sys_id' is missing or empty.
+          It must be passed from the previous Orchestrator node.
+        success_msg: "servicenow_change_sys_id is defined: {{ servicenow_change_sys_id }}"
+
+    - name: Calculate max poll retries
+      ansible.builtin.set_fact:
+        max_retries: "{{ (servicenow_approval_timeout_minutes * 60 / servicenow_poll_interval_seconds) | int }}"
+        poll_interval: "{{ servicenow_poll_interval_seconds | int }}"
+
+    - name: Poll ServiceNow change ticket until approved or closed
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/change_request/{{ servicenow_change_sys_id }}"
+        method: GET
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        return_content: true
+        status_code: 200
+      register: servicenow_change_response
+      until: >
+        servicenow_change_response.json.result.state in ['4', '7']
+      retries: "{{ max_retries }}"
+      delay: "{{ poll_interval }}"
+
+    - name: Extract final change ticket state
+      ansible.builtin.set_fact:
+        servicenow_change_state: "{{ servicenow_change_response.json.result.state }}"
+        servicenow_change_state_name: "{{ servicenow_state_names[servicenow_change_response.json.result.state] | default('Unknown') }}"
+
+    - name: Display final change ticket status
+      ansible.builtin.debug:
+        msg: >
+          ServiceNow change ticket {{ servicenow_change_sys_id }}
+          final state: {{ servicenow_change_state }} ({{ servicenow_change_state_name }})
+
+    - name: Fail if change ticket was not approved
+      ansible.builtin.fail:
+        msg: >
+          ServiceNow change ticket {{ servicenow_change_sys_id }} was not approved.
+          Final state: {{ servicenow_change_state }} ({{ servicenow_change_state_name }}).
+          Approval is required to proceed.
+      when: servicenow_change_state != '4'
+
+    - name: Pass servicenow_change_approved to Orchestrator
+      ansible.builtin.set_stats:
+        data:
+          servicenow_change_approved: true
+        per_host: false

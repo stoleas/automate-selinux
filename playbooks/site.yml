@@ -22,3 +22,6 @@
 
 - name: "Phase 7: Apply remediations"
   ansible.builtin.import_playbook: 09-apply-remediation.yml
+
+- name: "Phase 8: Post-remediation observation"
+  ansible.builtin.import_playbook: 14-observe-post-remediation.yml

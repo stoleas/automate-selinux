@@ -68,3 +68,27 @@ job_templates:
     inventory: "SELinux Lab"
     credentials:
       - "SELinux Lab Machine Credential"
+
+  - name: "SELinux - Create ServiceNow Change"
+    description: "Create a Normal Change ticket in ServiceNow for remediation approval"
+    playbook: playbooks/12-servicenow-create-change.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true
+
+  - name: "SELinux - Check ServiceNow Approval"
+    description: "Poll ServiceNow change ticket until approved, rejected, or timeout"
+    playbook: playbooks/13-servicenow-check-approval.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true
+
+  - name: "SELinux - Post-Remediation Observation"
+    description: "Re-collect AVCs after remediation, compare to pre-remediation count"
+    playbook: playbooks/14-observe-post-remediation.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+    ask_variables_on_launch: true

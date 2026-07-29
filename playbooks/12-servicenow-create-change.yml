@@ -1,0 +1,164 @@
+---
+- name: Create ServiceNow Normal Change ticket for SELinux remediation
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  tags:
+    - servicenow
+  tasks:
+    - name: Debug available inputs
+      ansible.builtin.debug:
+        msg:
+          - "selinux_analysis_json defined: {{ selinux_analysis_json is defined }}"
+          - "selinux_analysis_json type: {{ selinux_analysis_json | default('UNDEFINED') | type_debug }}"
+          - "servicenow_instance defined: {{ servicenow_instance is defined }}"
+          - "servicenow_username defined: {{ servicenow_username is defined }}"
+
+    # ── Parse selinux_analysis_json extra var ──────────────────────────────
+    # Handles both string (with optional markdown fences) and dict inputs.
+    # Note: type_debug returns 'str' not 'string' for string-typed vars.
+    - name: Set AI analysis from extra var (string input)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ (selinux_analysis_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '')) | from_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json | type_debug == 'str' and selinux_analysis_json | length > 0
+
+    - name: Set AI analysis from extra var (dict input)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ selinux_analysis_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json is mapping
+
+    - name: Set empty analysis (no data available)
+      ansible.builtin.set_fact:
+        selinux_analysis:
+          summary: "No AI analysis data available"
+          findings: []
+          audit2allow_assessment: "N/A"
+      when: selinux_analysis is not defined
+
+    # ── Build change ticket description ───────────────────────────────────
+    - name: Build change ticket description
+      ansible.builtin.set_fact:
+        _change_description: |
+          SELinux Remediation Change Request
+          ===================================
+
+          VM: {{ vm_name | default('selinux-demo') }}
+          Generated: {{ ansible_date_time.iso8601 }}
+
+          ## AI Analysis Summary
+          {{ selinux_analysis.summary | default('No summary available') }}
+
+          ## Findings
+          {% for finding in (selinux_analysis.findings | default([])) %}
+          - {{ finding }}
+          {% endfor %}
+
+          ## audit2allow Assessment
+          {{ selinux_analysis.audit2allow_assessment | default('N/A') }}
+
+    # ── Discover assignment group sys_id if not configured ─────────────────
+    - name: Discover IT assignment group sys_id
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_user_group?sysparm_query=name=IT&sysparm_limit=1"
+        method: GET
+        headers:
+          Accept: application/json
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200]
+      register: _group_response
+      when: servicenow_assignment_group | length == 0
+
+    - name: Set assignment group sys_id from discovery
+      ansible.builtin.set_fact:
+        _assignment_group_sys_id: "{{ _group_response.json.result[0].sys_id }}"
+      when:
+        - servicenow_assignment_group | length == 0
+        - _group_response.json.result is defined
+        - _group_response.json.result | length > 0
+
+    - name: Set assignment group sys_id from config
+      ansible.builtin.set_fact:
+        _assignment_group_sys_id: "{{ servicenow_assignment_group }}"
+      when: servicenow_assignment_group | length > 0
+
+    - name: Warn when assignment group not found
+      ansible.builtin.debug:
+        msg: "WARNING: Could not discover assignment group 'IT'. Change ticket will be created without assignment group."
+      when:
+        - servicenow_assignment_group | length == 0
+        - _assignment_group_sys_id is not defined
+
+    # ── Create Normal Change ticket ────────────────────────────────────────
+    - name: Create Normal Change ticket (with assignment group)
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/change_request"
+        method: POST
+        body_format: json
+        body:
+          type: normal
+          short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
+          description: "{{ _change_description }}"
+          assignment_group: "{{ _assignment_group_sys_id }}"
+          risk: "3"
+          impact: "2"
+        headers:
+          Accept: application/json
+          Content-Type: application/json
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [201]
+      register: _change_response
+      when: _assignment_group_sys_id is defined
+
+    - name: Create Normal Change ticket (without assignment group)
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/change_request"
+        method: POST
+        body_format: json
+        body:
+          type: normal
+          short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
+          description: "{{ _change_description }}"
+          risk: "3"
+          impact: "2"
+        headers:
+          Accept: application/json
+          Content-Type: application/json
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [201]
+      register: _change_response
+      when: _assignment_group_sys_id is not defined
+
+    - name: Set change ticket facts
+      ansible.builtin.set_fact:
+        _change_number: "{{ _change_response.json.result.number }}"
+        _change_sys_id: "{{ _change_response.json.result.sys_id }}"
+
+    # ── Display change ticket details ──────────────────────────────────────
+    - name: Display change ticket details
+      ansible.builtin.debug:
+        msg:
+          - "=== ServiceNow Change Ticket Created ==="
+          - "Number:  {{ _change_number }}"
+          - "sys_id:  {{ _change_sys_id }}"
+          - "URL:     https://{{ servicenow_instance }}.service-now.com/nav_to.do?uri=change_request.do?sys_id={{ _change_sys_id }}"
+          - "Type:    normal"
+          - "Risk:    3"
+          - "Impact:  2"
+
+    # ── Pass change ticket data to Orchestrator via set_stats ──────────────
+    - name: Pass change ticket data via set_stats
+      ansible.builtin.set_stats:
+        data:
+          servicenow_change_number: "{{ _change_number }}"
+          servicenow_change_sys_id: "{{ _change_sys_id }}"
+        per_host: false
