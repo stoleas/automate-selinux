@@ -25,3 +25,6 @@
 
 - name: "Phase 8: Post-remediation observation"
   ansible.builtin.import_playbook: 14-observe-post-remediation.yml
+
+- name: "Phase 9: ServiceNow setup (run once before demo)"
+  ansible.builtin.import_playbook: 15-servicenow-setup.yml

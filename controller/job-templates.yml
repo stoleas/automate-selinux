@@ -92,3 +92,11 @@ job_templates:
     credentials:
       - "SELinux Lab Machine Credential"
     ask_variables_on_launch: true
+
+  - name: "SELinux - ServiceNow Setup"
+    description: "Set up ServiceNow demo artifacts: assignment group, CMDB CI, email notifications"
+    playbook: playbooks/15-servicenow-setup.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: false

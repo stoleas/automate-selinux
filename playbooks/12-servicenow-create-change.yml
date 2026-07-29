@@ -103,6 +103,7 @@
           short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
           description: "{{ _change_description }}"
           assignment_group: "{{ _assignment_group_sys_id }}"
+          cmdb_ci: "{{ servicenow_ci_sys_id | default('') }}"
           risk: "3"
           impact: "2"
         headers:
@@ -125,6 +126,7 @@
           type: normal
           short_description: "SELinux remediation for {{ vm_name | default('selinux-demo') }}"
           description: "{{ _change_description }}"
+          cmdb_ci: "{{ servicenow_ci_sys_id | default('') }}"
           risk: "3"
           impact: "2"
         headers:

@@ -1,0 +1,171 @@
+---
+# Playbook: 15 - ServiceNow Setup
+# Idempotent setup of ServiceNow demo artifacts:
+#   1. Assignment group "SELinux Change Approvers"
+#   2. CMDB CI "selinux-demo" (Linux Server)
+#   3. Enable email notifications
+#   4. Set servicenow_assignment_group in vars.yml (optional, via set_stats)
+#
+# Run this once before the first demo. Safe to re-run.
+
+- name: Set up ServiceNow demo artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  tags:
+    - servicenow
+    - setup
+  vars:
+    _sn_group_name: "SELinux Change Approvers"
+    _sn_ci_name: "selinux-demo"
+    _sn_ci_class: "cmdb_ci_linux_server"
+    _sn_ci_ip: "192.168.86.196"
+    _sn_ci_os: "RHEL 10.2"
+  tasks:
+
+    # ── 1. Assignment Group ──────────────────────────────────────────────
+
+    - name: Check if SELinux Change Approvers group exists
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_user_group?sysparm_query=name={{ _sn_group_name }}&sysparm_limit=1&sysparm_fields=sys_id,name"
+        method: GET
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: _group_lookup
+
+    - name: Create SELinux Change Approvers group
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_user_group"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ _sn_group_name }}"
+          description: "Approvers for SELinux remediation change requests"
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200, 201]
+      register: _group_create
+      when: _group_lookup.json.result | length == 0
+
+    - name: Set group sys_id
+      ansible.builtin.set_fact:
+        _sn_group_sys_id: "{{ (_group_create.json.result.sys_id) if (_group_lookup.json.result | length == 0) else (_group_lookup.json.result[0].sys_id) }}"
+
+    - name: Display group info
+      ansible.builtin.debug:
+        msg: "Assignment group: {{ _sn_group_name }} (sys_id: {{ _sn_group_sys_id }})"
+
+    # ── 2. CMDB CI ────────────────────────────────────────────────────────
+
+    - name: Check if selinux-demo CI exists
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/cmdb_ci?sysparm_query=name={{ _sn_ci_name }}&sysparm_limit=1&sysparm_fields=sys_id,name,ip_address"
+        method: GET
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: _ci_lookup
+
+    - name: Create selinux-demo CI (Linux Server)
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/{{ _sn_ci_class }}"
+        method: POST
+        body_format: json
+        body:
+          name: "{{ _sn_ci_name }}"
+          ip_address: "{{ _sn_ci_ip }}"
+          os: "{{ _sn_ci_os }}"
+          os_domain: "stoleas.home"
+          short_description: "SELinux remediation demo VM"
+          assignment_group: "{{ _sn_group_sys_id }}"
+          operational_status: "1"
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200, 201]
+      register: _ci_create
+      when: _ci_lookup.json.result | length == 0
+
+    - name: Set CI sys_id
+      ansible.builtin.set_fact:
+        _sn_ci_sys_id: "{{ (_ci_create.json.result.sys_id) if (_ci_lookup.json.result | length == 0) else (_ci_lookup.json.result[0].sys_id) }}"
+
+    - name: Display CI info
+      ansible.builtin.debug:
+        msg: "CMDB CI: {{ _sn_ci_name }} (sys_id: {{ _sn_ci_sys_id }}, IP: {{ _sn_ci_ip }})"
+
+    # ── 3. Enable email notifications ────────────────────────────────────
+
+    - name: Check if email.activate property exists
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_properties?sysparm_query=name=email.activate&sysparm_limit=1&sysparm_fields=sys_id,value"
+        method: GET
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: _email_prop_lookup
+
+    - name: Enable email notifications (create property)
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_properties"
+        method: POST
+        body_format: json
+        body:
+          name: "email.activate"
+          value: "true"
+          description: "Enable email notifications for demo"
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: [200, 201]
+      register: _email_create
+      when: _email_prop_lookup.json.result | length == 0
+
+    - name: Enable email notifications (update property)
+      ansible.builtin.uri:
+        url: "{{ servicenow_api_base }}/sys_properties/{{ _email_prop_lookup.json.result[0].sys_id }}"
+        method: PATCH
+        body_format: json
+        body:
+          value: "true"
+        user: "{{ servicenow_username }}"
+        password: "{{ servicenow_password }}"
+        force_basic_auth: true
+        validate_certs: false
+      when: _email_prop_lookup.json.result | length > 0 and _email_prop_lookup.json.result[0].value != 'true'
+
+    - name: Display email status
+      ansible.builtin.debug:
+        msg: "Email notifications: enabled"
+
+    # ── 4. Summary ───────────────────────────────────────────────────────
+
+    - name: Pass group sys_id to vars for downstream playbooks
+      ansible.builtin.set_stats:
+        data:
+          servicenow_assignment_group: "{{ _sn_group_sys_id }}"
+          servicenow_ci_sys_id: "{{ _sn_ci_sys_id }}"
+        per_host: false
+
+    - name: Display setup summary
+      ansible.builtin.debug:
+        msg: |
+          === ServiceNow Setup Complete ===
+          Assignment Group: {{ _sn_group_name }} ({{ _sn_group_sys_id }})
+          CMDB CI: {{ _sn_ci_name }} ({{ _sn_ci_sys_id }})
+          Email notifications: enabled
+
+          To use the assignment group in change tickets, set in vars.yml:
+            servicenow_assignment_group: "{{ _sn_group_sys_id }}"
+
+          To link the CI to change tickets, the create-change playbook
+          can reference this CI via the cmdb_ci field.

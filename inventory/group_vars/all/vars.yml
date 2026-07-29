@@ -36,7 +36,8 @@ servicenow_username: "admin"
 servicenow_password: "{{ vault_servicenow_password }}"
 servicenow_api_base: "https://{{ servicenow_instance }}.service-now.com/api/now/table"
 servicenow_change_type: "normal"
-servicenow_assignment_group: ""  # sys_id of the group, discover via API
+servicenow_assignment_group: ""  # sys_id of the group, discover via API or run playbook 15
+servicenow_ci_sys_id: ""  # sys_id of the CMDB CI, set by playbook 15
 servicenow_approval_timeout_minutes: 30  # how long to poll for approval
 servicenow_poll_interval_seconds: 30  # poll frequency
 
