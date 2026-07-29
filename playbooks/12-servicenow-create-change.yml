@@ -124,7 +124,7 @@
         password: "{{ servicenow_password }}"
         force_basic_auth: true
         validate_certs: false
-        status_code: [201]
+        status_code: [200, 201]
       register: _change_response
       when: _assignment_group_sys_id is defined
 
@@ -147,7 +147,7 @@
         password: "{{ servicenow_password }}"
         force_basic_auth: true
         validate_certs: false
-        status_code: [201]
+        status_code: [200, 201]
       register: _change_response
       when: _assignment_group_sys_id is not defined
 
@@ -155,6 +155,7 @@
       ansible.builtin.set_fact:
         _change_number: "{{ _change_response.json.result.number }}"
         _change_sys_id: "{{ _change_response.json.result.sys_id }}"
+      when: _change_response.json is defined
 
     # ── Display change ticket details ──────────────────────────────────────
     - name: Display change ticket details
