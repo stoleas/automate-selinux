@@ -6,6 +6,17 @@
   become: false
   tags:
     - servicenow
+  vars:
+    # ServiceNow connection defaults — overridden by group_vars if available
+    servicenow_instance: "dev231222"
+    servicenow_username: "admin"
+    servicenow_password: "{{ vault_servicenow_password }}"
+    servicenow_api_base: "https://{{ servicenow_instance }}.service-now.com/api/now/table"
+    servicenow_change_type: "normal"
+    servicenow_assignment_group: "b3c53ffe835a8310afec5930ceaad3e8"
+    servicenow_ci_sys_id: "84d5bff2839a8310afec5930ceaad360"
+    servicenow_approval_timeout_minutes: 30
+    servicenow_poll_interval_seconds: 30
   tasks:
     - name: Debug available inputs
       ansible.builtin.debug:

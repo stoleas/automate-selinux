@@ -24,6 +24,14 @@
   become: false
   tags:
     - servicenow
+  vars:
+    # ServiceNow connection defaults — overridden by group_vars if available
+    servicenow_instance: "dev231222"
+    servicenow_username: "admin"
+    servicenow_password: "{{ vault_servicenow_password }}"
+    servicenow_api_base: "https://{{ servicenow_instance }}.service-now.com/api/now/table"
+    servicenow_approval_timeout_minutes: 30
+    servicenow_poll_interval_seconds: 30
 
   tasks:
 
