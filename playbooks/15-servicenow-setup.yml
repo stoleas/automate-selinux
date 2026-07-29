@@ -28,7 +28,7 @@
 
     - name: Check if SELinux Change Approvers group exists
       ansible.builtin.uri:
-        url: "{{ servicenow_api_base }}/sys_user_group?sysparm_query=name={{ _sn_group_name }}&sysparm_limit=1&sysparm_fields=sys_id,name"
+        url: "{{ servicenow_api_base }}/sys_user_group?sysparm_query=name={{ _sn_group_name | regex_replace(' ', '%20') }}&sysparm_limit=1&sysparm_fields=sys_id,name"
         method: GET
         user: "{{ servicenow_username }}"
         password: "{{ servicenow_password }}"
