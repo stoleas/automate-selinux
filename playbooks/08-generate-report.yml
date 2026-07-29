@@ -108,18 +108,20 @@
       when: not _obsidian_repo_stat.stat.exists
       register: _obsidian_clone
       changed_when: _obsidian_clone.rc == 0
+      ignore_errors: true
 
     - name: Set git config on freshly cloned repo
       ansible.builtin.command:
         cmd: "git config user.name 'Edward Quail' && git config user.email 'edward.quail@gmail.com'"
         chdir: "{{ _obsidian_repo }}"
-      when: _obsidian_clone is changed
+      when: _obsidian_clone is changed and _obsidian_clone.rc | default(1) == 0
 
     - name: Ensure report directory exists in obsidian repo
       ansible.builtin.file:
         path: "{{ _report_dir }}"
         state: directory
         mode: "0755"
+      when: _obsidian_clone is not changed or _obsidian_clone.rc | default(1) == 0
 
     - name: Pull latest obsidian repo
       ansible.builtin.command:
@@ -128,6 +130,7 @@
       register: _git_pull
       changed_when: "'Already up to date' not in _git_pull.stdout"
       ignore_errors: true
+      when: _obsidian_clone is not changed or _obsidian_clone.rc | default(1) == 0
 
     - name: Write timestamped report to obsidian repo
       ansible.builtin.copy:
@@ -135,12 +138,14 @@
         content: "{{ _report_md_content }}"
         mode: "0644"
       register: _report_write
+      when: _obsidian_clone is not changed or _obsidian_clone.rc | default(1) == 0
 
     - name: Git add report
       ansible.builtin.command:
         cmd: "git add {{ _report_dir }}/{{ _timestamp_file }}"
         chdir: "{{ _obsidian_repo }}"
-      when: _report_write.changed
+      when: _report_write.changed | default(false)
+      ignore_errors: true
 
     - name: Git commit report
       ansible.builtin.command:
@@ -148,7 +153,8 @@
         chdir: "{{ _obsidian_repo }}"
       register: _git_commit
       changed_when: "'nothing to commit' not in _git_commit.stdout"
-      when: _report_write.changed
+      when: _report_write.changed | default(false)
+      ignore_errors: true
 
     - name: Git push report
       ansible.builtin.command:
@@ -156,7 +162,7 @@
         chdir: "{{ _obsidian_repo }}"
       register: _git_push
       changed_when: _git_push.rc == 0
-      when: _git_commit.changed
+      when: _git_commit.changed | default(false)
       ignore_errors: true
 
     - name: Display publish result
