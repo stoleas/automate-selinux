@@ -1,7 +1,13 @@
 ---
 # Playbook: 13 - ServiceNow Check Approval
-# Polls a ServiceNow change ticket until it is approved (state 4),
-# closed/rejected (state 7), or the timeout expires.
+# Polls a ServiceNow change ticket's approval field until it reaches
+# "approved" or "rejected", or the timeout expires.
+#
+# On the developer instance (dev231222), the change_request state field is
+# locked down by a "Change Model: Check State Transition" business rule —
+# direct state changes via API are blocked. The approval field is the correct
+# indicator: it transitions from "not requested" → "requested" → "approved"
+# or "rejected". The approver sets approval="approved" via the UI or API.
 #
 # Required extra vars (passed from previous Orchestrator node):
 #   servicenow_change_sys_id            - sys_id of the change ticket to poll
@@ -19,17 +25,6 @@
   tags:
     - servicenow
 
-  vars:
-    # State name mapping for human-readable output
-    servicenow_state_names:
-      "1": "New"
-      "2": "Assess"
-      "3": "Authorize"
-      "4": "Approved"
-      "5": "Implement"
-      "6": "Review"
-      "7": "Closed"
-
   tasks:
 
     - name: Assert servicenow_change_sys_id is defined and non-empty
@@ -44,12 +39,12 @@
 
     - name: Calculate max poll retries
       ansible.builtin.set_fact:
-        max_retries: "{{ (servicenow_approval_timeout_minutes * 60 / servicenow_poll_interval_seconds) | int }}"
+        max_retries: "{{ (servicenow_approval_timeout_minutes | int * 60 / servicenow_poll_interval_seconds | int) | int }}"
         poll_interval: "{{ servicenow_poll_interval_seconds | int }}"
 
-    - name: Poll ServiceNow change ticket until approved or closed
+    - name: Poll ServiceNow change ticket until approved or rejected
       ansible.builtin.uri:
-        url: "{{ servicenow_api_base }}/change_request/{{ servicenow_change_sys_id }}"
+        url: "{{ servicenow_api_base }}/change_request/{{ servicenow_change_sys_id }}?sysparm_fields=number,approval,state"
         method: GET
         user: "{{ servicenow_username }}"
         password: "{{ servicenow_password }}"
@@ -58,32 +53,32 @@
         return_content: true
         status_code: 200
       register: servicenow_change_response
-      until: >
-        servicenow_change_response.json.result.state in ['4', '7']
+      until: servicenow_change_response.json.result.approval in ['approved', 'rejected']
       retries: "{{ max_retries }}"
       delay: "{{ poll_interval }}"
 
-    - name: Extract final change ticket state
+    - name: Extract final approval status
       ansible.builtin.set_fact:
-        servicenow_change_state: "{{ servicenow_change_response.json.result.state }}"
-        servicenow_change_state_name: "{{ servicenow_state_names[servicenow_change_response.json.result.state] | default('Unknown') }}"
+        servicenow_approval: "{{ servicenow_change_response.json.result.approval }}"
+        servicenow_change_number: "{{ servicenow_change_response.json.result.number }}"
 
     - name: Display final change ticket status
       ansible.builtin.debug:
         msg: >
-          ServiceNow change ticket {{ servicenow_change_sys_id }}
-          final state: {{ servicenow_change_state }} ({{ servicenow_change_state_name }})
+          ServiceNow change ticket {{ servicenow_change_number }}
+          (sys_id: {{ servicenow_change_sys_id }})
+          approval: {{ servicenow_approval }}
 
     - name: Fail if change ticket was not approved
       ansible.builtin.fail:
         msg: >
-          ServiceNow change ticket {{ servicenow_change_sys_id }} was not approved.
-          Final state: {{ servicenow_change_state }} ({{ servicenow_change_state_name }}).
-          Approval is required to proceed.
-      when: servicenow_change_state != '4'
+          ServiceNow change ticket {{ servicenow_change_number }} was {{ servicenow_approval }}.
+          Approval is required to proceed with remediation.
+      when: servicenow_approval != 'approved'
 
     - name: Pass servicenow_change_approved to Orchestrator
       ansible.builtin.set_stats:
         data:
           servicenow_change_approved: true
+          servicenow_change_number: "{{ servicenow_change_number }}"
         per_host: false
