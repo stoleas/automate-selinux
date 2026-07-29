@@ -6,6 +6,8 @@
   become: false
   tags:
     - report
+  vars:
+    selinux_policy_module_name: "selinux_demo_policy"
   tasks:
     - name: Read AI analysis from file
       ansible.builtin.slurp:
