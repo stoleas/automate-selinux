@@ -43,7 +43,7 @@ setsebool -P {{ finding.remediation.boolean_name }} {{ finding.remediation.boole
 semanage port -a -t {{ finding.remediation.selinux_type }} -p {{ finding.remediation.protocol }} {{ finding.remediation.port }}
 ```
 {% elif finding.remediation.type == 'module' %}
-Custom policy module `{{ finding.remediation.module_name }}` required — see `{{ report_output_dir }}/{{ selinux_policy_module_name }}.te`.
+Custom policy module `{{ selinux_policy_module_name }}` required — see `{{ report_output_dir }}/{{ selinux_policy_module_name }}.te`.
 {% endif %}
 
 {% endfor %}
