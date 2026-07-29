@@ -31,8 +31,8 @@ eda_webhook_user: "selinux"
 eda_webhook_password: "{{ vault_eda_webhook_password }}"
 
 # ── ServiceNow ──────────────────────────────────────────────────────────────
-servicenow_instance: ""  # e.g. "dev12345" — set to your developer instance name
-servicenow_username: "edward.quail@gmail.com"
+servicenow_instance: "dev231222"  # ServiceNow developer instance
+servicenow_username: "admin"
 servicenow_password: "{{ vault_servicenow_password }}"
 servicenow_api_base: "https://{{ servicenow_instance }}.service-now.com/api/now/table"
 servicenow_change_type: "normal"
