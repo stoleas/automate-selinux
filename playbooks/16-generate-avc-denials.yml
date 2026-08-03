@@ -19,6 +19,9 @@
     target_selinux_mode: "permissive"
     disable_dontaudit: true            # surfaces normally-suppressed denials; restored on cleanup
     httpd_test_port: 8585              # port NOT in http_port_t — used for the bind denial
+    # Lab demo app DocumentRoot (roles/demo_app) — not the distro /var/www/html default
+    web_content_dir: "/srv/webapp"
+    web_cgi_dir: "/srv/webapp/cgi-bin"
 
   handlers:
     - name: restart vsftpd
@@ -123,14 +126,14 @@
       ansible.builtin.meta: flush_handlers
 
     # --- Denial #1: httpd reading a file mislabeled default_t -----------
-    - name: Create web content file (gets correct httpd_sys_content_t on write)
+    - name: Create web content file under lab DocumentRoot
       ansible.builtin.copy:
         content: "Mislabeled file for AVC denial generation\n"
-        dest: /var/www/html/bad_index.html
+        dest: "{{ web_content_dir }}/bad_index.html"
         mode: '0644'
 
     - name: Mislabel the web content file AFTER creation
-      ansible.builtin.command: chcon -t default_t /var/www/html/bad_index.html
+      ansible.builtin.command: chcon -t default_t {{ web_content_dir }}/bad_index.html
       changed_when: true
 
     - name: Trigger httpd read denial
@@ -142,21 +145,21 @@
     # --- Denial #2: httpd exec'ing a CGI script mislabeled default_t ----
     - name: Ensure cgi-bin directory exists
       ansible.builtin.file:
-        path: /var/www/cgi-bin
+        path: "{{ web_cgi_dir }}"
         state: directory
         mode: '0755'
 
-    - name: Create CGI script (gets correct httpd_sys_script_exec_t on write)
+    - name: Create CGI script under lab ScriptAlias path
       ansible.builtin.copy:
         content: |
           #!/bin/bash
           printf "Content-type: text/plain\n\n"
           echo "denied cgi"
-        dest: /var/www/cgi-bin/bad_cgi.sh
+        dest: "{{ web_cgi_dir }}/bad_cgi.sh"
         mode: '0755'
 
     - name: Mislabel the CGI script AFTER creation
-      ansible.builtin.command: chcon -t default_t /var/www/cgi-bin/bad_cgi.sh
+      ansible.builtin.command: chcon -t default_t {{ web_cgi_dir }}/bad_cgi.sh
       changed_when: true
 
     - name: Trigger httpd cgi-exec denial
@@ -207,8 +210,14 @@
       ansible.builtin.pause:
         seconds: 3
 
-    - name: Show recent AVC denials
-      ansible.builtin.command: ausearch -m AVC,USER_AVC -ts recent -i
+    # Prefer grep over ausearch -ts recent: on this lab VM ausearch's default
+    # checkpoint/time filters often miss events that are present in audit.log
+    # (Collect and Notify uses the same grep approach).
+    - name: Show recent AVC denials from audit.log
+      ansible.builtin.shell: |
+        set -o pipefail
+        grep 'type=AVC' /var/log/audit/audit.log | grep -E 'httpd|vsftpd|ftpd' | tail -40 \
+          || echo "No matching AVCs found"
       register: avc_output
       changed_when: false
       ignore_errors: true
@@ -222,8 +231,8 @@
         path: "{{ item }}"
         state: absent
       loop:
-        - /var/www/html/bad_index.html
-        - /var/www/cgi-bin/bad_cgi.sh
+        - "{{ web_content_dir }}/bad_index.html"
+        - "{{ web_cgi_dir }}/bad_cgi.sh"
         - /var/ftp/pub/bad_ftp.txt
       when: cleanup_after | bool
 
