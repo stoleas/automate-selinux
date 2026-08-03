@@ -30,8 +30,17 @@
 
     - name: Set event payload facts
       ansible.builtin.set_fact:
-        _avc_text: "{{ _avc_file.content | b64decode }}"
-        _audit2allow_text: "{{ (_audit2allow_file.content | b64decode) if (_audit2allow_file.content is defined) else '' }}"
+        _avc_text_full: "{{ _avc_file.content | b64decode }}"
+        _audit2allow_text_full: "{{ (_audit2allow_file.content | b64decode) if (_audit2allow_file.content is defined) else '' }}"
+
+    # Orchestrator agentic nodes reject prompts > 10000 chars. The workflow
+    # prompt wraps these fields, so keep headroom (~7000 + ~1500 + template).
+    - name: Truncate AVC / audit2allow payloads for Orchestrator prompt limit
+      ansible.builtin.set_fact:
+        _avc_text: "{{ _avc_text_full[:7000] }}"
+        _audit2allow_text: "{{ _audit2allow_text_full[:1500] }}"
+        _avc_truncated: "{{ _avc_text_full | length > 7000 }}"
+        _audit2allow_truncated: "{{ _audit2allow_text_full | length > 1500 }}"
 
     - name: Send SELinux analysis event to EDA
       ansible.builtin.uri:
@@ -41,7 +50,7 @@
         body:
           action: selinux_analysis
           host: "{{ vm_name | default('selinux-demo') }}"
-          avc_count: "{{ _avc_text.split('\n') | select | length }}"
+          avc_count: "{{ _avc_text_full.split('\n') | select | length }}"
           avc_denials: "{{ _avc_text }}"
           audit2allow_output: "{{ _audit2allow_text }}"
           timestamp: "{{ ansible_date_time.iso8601 }}"
@@ -60,5 +69,6 @@
           === EDA Notification Sent ===
           Endpoint: {{ eda_webhook_url }}
           Action: selinux_analysis
-          AVC denials: {{ _avc_text.split('\n') | select | length }}
+          AVC denials (full/sent chars): {{ _avc_text_full | length }}/{{ _avc_text | length }}{{ ' [truncated]' if _avc_truncated else '' }}
+          audit2allow chars: {{ _audit2allow_text_full | length }}/{{ _audit2allow_text | length }}{{ ' [truncated]' if _audit2allow_truncated else '' }}
           Response: {{ _eda_response.status }}
