@@ -1,0 +1,239 @@
+---
+# Utility playbook — not part of the Orchestrator demo DAG.
+# Generates a variety of AVC denials on the demo VM so Collect and Notify
+# has richer input before you start the remediation flow.
+#
+# Launch via AAP job template "SELinux - Generate AVC Denials", or locally:
+#   ansible-playbook playbooks/16-generate-avc-denials.yml
+#
+# Defaults keep SELinux in permissive mode so the lab demo state is preserved.
+# Override with -e target_selinux_mode=enforcing if you need blocked denials.
+
+- name: Generate variety of SELinux AVC denials
+  hosts: selinux-demo
+  become: true
+  vars:
+    temp_dir: "/tmp/selinux_denials_test"
+    cleanup_after: true
+    # Lab default: log denials without blocking. Override to "enforcing" if needed.
+    target_selinux_mode: "permissive"
+    disable_dontaudit: true            # surfaces normally-suppressed denials; restored on cleanup
+    httpd_test_port: 8585              # port NOT in http_port_t — used for the bind denial
+
+  handlers:
+    - name: restart vsftpd
+      ansible.builtin.service:
+        name: vsftpd
+        state: restarted
+
+    - name: restart httpd
+      ansible.builtin.service:
+        name: httpd
+        state: restarted
+      # Expected to fail once Listen {{ httpd_test_port }} is in place — that
+      # failed bind is the port-denial trigger. Without ignore_errors, Ansible
+      # treats the handler failure as fatal and skips cleanup / ausearch.
+      ignore_errors: true
+
+  tasks:
+
+    - name: Ensure auditd is installed, started, and enabled
+      block:
+        - name: Install auditd
+          ansible.builtin.dnf:
+            name: audit
+            state: present
+
+        - name: Start and enable auditd
+          ansible.builtin.service:
+            name: auditd
+            state: started
+            enabled: true
+
+    - name: Install required packages
+      ansible.builtin.dnf:
+        name:
+          - policycoreutils
+          - policycoreutils-python-utils
+          - setroubleshoot-server
+          - httpd
+          - vsftpd
+          - curl
+        state: present
+
+    - name: Ensure SELinux is enabled and in correct mode
+      ansible.builtin.selinux:
+        policy: targeted
+        state: "{{ target_selinux_mode }}"
+      register: selinux_result
+
+    - name: Check actual runtime enforcement mode
+      ansible.builtin.command: getenforce
+      register: enforce_status
+      changed_when: false
+
+    - name: Warn if runtime mode doesn't match target (may need a reboot)
+      ansible.builtin.debug:
+        msg: >-
+          WARNING: getenforce reports '{{ enforce_status.stdout }}' but
+          target is '{{ target_selinux_mode }}'. If SELinux was previously
+          'disabled', switching to enforcing/permissive only takes effect
+          after a reboot. Re-run this playbook after rebooting if so.
+      when: enforce_status.stdout | lower != target_selinux_mode
+
+    - name: Disable dontaudit rules to surface normally-suppressed denials
+      ansible.builtin.command: semodule -DB
+      changed_when: true
+      when: disable_dontaudit | bool
+
+    - name: Create temporary staging directory
+      ansible.builtin.file:
+        path: "{{ temp_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure no leftover test Listen directive from a previous run
+      # A prior aborted run can leave Listen {{ httpd_test_port }} in place,
+      # which prevents httpd from starting. Strip it before we start httpd.
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf/httpd.conf
+        line: "Listen {{ httpd_test_port }}"
+        state: absent
+
+    - name: Start and enable httpd
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: true
+
+    - name: Start and enable vsftpd
+      ansible.builtin.service:
+        name: vsftpd
+        state: started
+        enabled: true
+
+    - name: Ensure anonymous FTP read is enabled for the demo
+      ansible.builtin.lineinfile:
+        path: /etc/vsftpd/vsftpd.conf
+        regexp: '^anonymous_enable='
+        line: 'anonymous_enable=YES'
+      notify: restart vsftpd
+
+    - name: Flush handlers so vsftpd config change is live before testing
+      ansible.builtin.meta: flush_handlers
+
+    # --- Denial #1: httpd reading a file mislabeled default_t -----------
+    - name: Create web content file (gets correct httpd_sys_content_t on write)
+      ansible.builtin.copy:
+        content: "Mislabeled file for AVC denial generation\n"
+        dest: /var/www/html/bad_index.html
+        mode: '0644'
+
+    - name: Mislabel the web content file AFTER creation
+      ansible.builtin.command: chcon -t default_t /var/www/html/bad_index.html
+      changed_when: true
+
+    - name: Trigger httpd read denial
+      ansible.builtin.uri:
+        url: "http://localhost/bad_index.html"
+        timeout: 5
+      ignore_errors: true
+
+    # --- Denial #2: httpd exec'ing a CGI script mislabeled default_t ----
+    - name: Ensure cgi-bin directory exists
+      ansible.builtin.file:
+        path: /var/www/cgi-bin
+        state: directory
+        mode: '0755'
+
+    - name: Create CGI script (gets correct httpd_sys_script_exec_t on write)
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          printf "Content-type: text/plain\n\n"
+          echo "denied cgi"
+        dest: /var/www/cgi-bin/bad_cgi.sh
+        mode: '0755'
+
+    - name: Mislabel the CGI script AFTER creation
+      ansible.builtin.command: chcon -t default_t /var/www/cgi-bin/bad_cgi.sh
+      changed_when: true
+
+    - name: Trigger httpd cgi-exec denial
+      ansible.builtin.uri:
+        url: "http://localhost/cgi-bin/bad_cgi.sh"
+        timeout: 5
+      ignore_errors: true
+
+    # --- Denial #3: httpd trying to bind a port outside http_port_t -----
+    - name: Add a Listen directive on a port not in http_port_t
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf/httpd.conf
+        line: "Listen {{ httpd_test_port }}"
+        insertafter: '^Listen 80'
+      notify: restart httpd
+
+    - name: Flush handlers to trigger the port bind attempt (and denial)
+      ansible.builtin.meta: flush_handlers
+      ignore_errors: true
+
+    - name: Remove the test Listen directive (restore normal httpd config)
+      ansible.builtin.lineinfile:
+        path: /etc/httpd/conf/httpd.conf
+        line: "Listen {{ httpd_test_port }}"
+        state: absent
+      notify: restart httpd
+
+    - name: Flush handlers to restore httpd to a healthy state
+      ansible.builtin.meta: flush_handlers
+
+    # --- Denial #4: vsftpd reading a file mislabeled default_t ----------
+    - name: Create FTP content file (gets correct public_content_t on write)
+      ansible.builtin.copy:
+        content: "FTP mislabeled file\n"
+        dest: /var/ftp/pub/bad_ftp.txt
+        mode: '0644'
+
+    - name: Mislabel the FTP content file AFTER creation
+      ansible.builtin.command: chcon -t default_t /var/ftp/pub/bad_ftp.txt
+      changed_when: true
+
+    - name: Trigger vsftpd read denial via an actual anonymous fetch
+      ansible.builtin.command: curl -s -m 5 ftp://localhost/pub/bad_ftp.txt -o /dev/null
+      changed_when: false
+      ignore_errors: true
+
+    - name: Wait for auditd to flush events to disk
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: Show recent AVC denials
+      ansible.builtin.command: ausearch -m AVC,USER_AVC -ts recent -i
+      register: avc_output
+      changed_when: false
+      ignore_errors: true
+
+    - name: Denial Summary
+      ansible.builtin.debug:
+        msg: "{{ avc_output.stdout_lines | default(['No AVCs found']) }}"
+
+    - name: Cleanup web/cgi/ftp test artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/www/html/bad_index.html
+        - /var/www/cgi-bin/bad_cgi.sh
+        - /var/ftp/pub/bad_ftp.txt
+      when: cleanup_after | bool
+
+    - name: Remove temporary staging directory
+      ansible.builtin.file:
+        path: "{{ temp_dir }}"
+        state: absent
+      when: cleanup_after | bool
+
+    - name: Restore dontaudit rules (rebuild policy without -D)
+      ansible.builtin.command: semodule -B
+      changed_when: true
+      when: disable_dontaudit | bool and cleanup_after | bool

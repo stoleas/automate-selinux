@@ -100,3 +100,12 @@ job_templates:
     credentials:
       - "SELinux Lab Vault Credential"
     ask_variables_on_launch: false
+
+  - name: "SELinux - Generate AVC Denials"
+    description: "Utility: generate additional AVC denials on the demo VM before Collect and Notify (not part of the Orchestrator demo flow)"
+    playbook: playbooks/16-generate-avc-denials.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Machine Credential"
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true

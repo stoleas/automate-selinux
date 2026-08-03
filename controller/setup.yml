@@ -293,6 +293,17 @@
         credentials:
           - "{{ vault_credential_name }}"
 
+      - name: "SELinux - Generate AVC Denials"
+        description: "Utility: generate additional AVC denials on the demo VM before Collect and Notify (not part of the Orchestrator demo flow)"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/16-generate-avc-denials.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ machine_credential_name }}"
+          - "{{ vault_credential_name }}"
+
   roles:
     - infra.aap_configuration.dispatch
 
@@ -305,11 +316,12 @@
           Project:    {{ project_name }}
           Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
           Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}, {{ orchestrator_credential_name }}
-          Job Templates: 15
+          Job Templates: 16
           Workflows: none (managed by Automation Orchestrator)
 
           Next steps:
           1. Verify credentials in AAP UI (add SSH key / vault password / orchestrator password if not set)
           2. Sync the project in AAP
           3. Run: bash orchestrator/setup.sh  (creates Orchestrator workflow)
-          4. Launch "SELinux - Collect and Notify" to trigger the Orchestrator flow
+          4. Optional: launch "SELinux - Generate AVC Denials" to seed extra AVCs
+          5. Launch "SELinux - Collect and Notify" to trigger the Orchestrator flow
