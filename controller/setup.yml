@@ -43,7 +43,7 @@
     kvm_host_ip: "192.168.86.10"
 
     # ── Orchestrator ──────────────────────────────────────────
-    orchestrator_url: "https://automa-d61a1901-automation-orchestrator-automation-orchestrator.apps.sno.stoleas.home"
+    orchestrator_url: "https://orchestrator.apps.sno.stoleas.home"
     orchestrator_credential_name: "Automation Orchestrator"
 
     # ── infra.aap_configuration data ────────────────────────

@@ -1,16 +1,18 @@
 {
   "name": "SELinux Remediation Workflow",
-  "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation",
+  "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation. AO 2026.8 expressions: trigger output is the webhook body (${trigger.payload.*}); agentic output is ${n1.result.content}; AAP artifacts are ${n3a.artifacts.*}. API: /docs",
   "workflow_definition": {
     "schema_version": "2.0.0",
     "name": "SELinux Remediation Workflow",
+    "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation",
     "triggers": [
       {
         "id": "t1",
-        "type": "webhook_trigger",
+        "type": "eda_trigger",
         "name": "SELinux EDA Trigger",
-        "config": {
-          "webhook_path": "selinux"
+        "parameters": {
+          "webhook_path": "selinux",
+          "authorized_service_account_ids": ["PLACEHOLDER_SA_ID"]
         }
       }
     ],
@@ -19,75 +21,117 @@
         "id": "n1",
         "type": "agentic",
         "name": "AI Analysis",
-        "config": {
-          "model": "claude-haiku-4-5",
-          "prompt": "Analyze SELinux AVC denials from RHEL 10.2 (httpd, /srv/webapp/, permissive mode).\n\nAVC Denials:\n${trigger.payload.payload.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.payload.payload.audit2allow_output}\n\nGroup duplicate denials. Prefer semanage fcontext over booleans/modules.\n\nReturn ONLY raw JSON. Do NOT wrap in markdown code fences. Do NOT use ```json or ```.\nStart your response with { and end with }.\nFormat: {\"summary\":\"brief\",\"findings\":[{\"denial\":\"short desc\",\"source_type\":\"\",\"target_type\":\"\",\"target_path\":\"\",\"permission\":\"\",\"recommendation\":\"short fix\",\"remediation\":{\"type\":\"fcontext|boolean|port|module\",\"selinux_type\":\"\",\"path_spec\":\"\",\"boolean_name\":\"\",\"boolean_value\":\"\"}}],\"audit2allow_assessment\":\"brief\"}",
-          "credential_id": "962cc0a4-4cb1-4b7f-ab0d-7536e216f10e",
-          "integration_id": "4d12c7fb-1c34-491b-bd56-7aaa249ce3c4"
+        "parameters": {
+          "prompt": "Analyze SELinux AVC denials from RHEL 10.2 (httpd, /srv/webapp/, permissive mode).\n\nAVC Denials:\n${trigger.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.audit2allow_output}\n\nGroup duplicate denials. Prefer semanage fcontext over booleans/modules.\n\nReturn ONLY raw JSON. Do NOT wrap in markdown code fences. Do NOT use ```json or ```.\nStart your response with { and end with }.\nFormat: {\"summary\":\"brief\",\"findings\":[{\"denial\":\"short desc\",\"source_type\":\"\",\"target_type\":\"\",\"target_path\":\"\",\"permission\":\"\",\"recommendation\":\"short fix\",\"remediation\":{\"type\":\"fcontext|boolean|port|module\",\"selinux_type\":\"\",\"path_spec\":\"\",\"boolean_name\":\"\",\"boolean_value\":\"\"}}],\"audit2allow_assessment\":\"brief\"}",
+          "llm_model_id": "PLACEHOLDER_LLM_MODEL_ID",
+          "credential_id": "PLACEHOLDER_LLM_CRED_ID",
+          "tool_selection_strategy": "NONE",
+          "responseSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["summary", "findings", "audit2allow_assessment"],
+            "properties": {
+              "summary": { "type": "string" },
+              "audit2allow_assessment": { "type": "string" },
+              "findings": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["denial", "recommendation", "remediation"],
+                  "properties": {
+                    "denial": { "type": "string" },
+                    "source_type": { "type": "string" },
+                    "target_type": { "type": "string" },
+                    "target_path": { "type": "string" },
+                    "permission": { "type": "string" },
+                    "recommendation": { "type": "string" },
+                    "remediation": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["type"],
+                      "properties": {
+                        "type": { "type": "string" },
+                        "selinux_type": { "type": "string" },
+                        "path_spec": { "type": "string" },
+                        "boolean_name": { "type": "string" },
+                        "boolean_value": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       },
       {
         "id": "n2",
         "type": "aap_job_template",
         "name": "Generate Report",
-        "config": {
-          "job_template_id": 22,
+        "parameters": {
+          "job_template_id": 0,
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "trigger_payload": "${trigger.payload}",
             "selinux_analysis_json": "${n1.result.content}"
-          },
-          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+          }
         }
       },
       {
         "id": "n3a",
         "type": "aap_job_template",
         "name": "Create ServiceNow Change",
-        "config": {
+        "parameters": {
           "job_template_id": 0,
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "selinux_analysis_json": "${n1.result.content}",
-            "vm_name": "${trigger.payload.payload.payload.host}"
-          },
-          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+            "vm_name": "${trigger.payload.host}"
+          }
         }
       },
       {
         "id": "n3b",
         "type": "aap_job_template",
         "name": "Check ServiceNow Approval",
-        "config": {
+        "parameters": {
           "job_template_id": 0,
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "servicenow_change_sys_id": "${n3a.artifacts.servicenow_change_sys_id}"
-          },
-          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+          }
         }
       },
       {
         "id": "n4",
         "type": "aap_job_template",
         "name": "Apply Remediation",
-        "config": {
-          "job_template_id": 23,
+        "parameters": {
+          "job_template_id": 0,
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "trigger_payload": "${trigger.payload}",
             "selinux_analysis_json": "${n1.result.content}"
-          },
-          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+          }
         }
       },
       {
         "id": "n5",
         "type": "aap_job_template",
         "name": "Post-Remediation Observation",
-        "config": {
+        "parameters": {
           "job_template_id": 0,
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
-            "vm_name": "${trigger.payload.payload.payload.host}",
-            "pre_avc_count": "${trigger.payload.payload.payload.avc_count}"
-          },
-          "credential_id": "d43daa3a-d788-48a6-bc9c-0bfdbed1c268"
+            "vm_name": "${trigger.payload.host}",
+            "pre_avc_count": "${trigger.payload.avc_count}"
+          }
         }
       }
     ],
@@ -96,8 +140,8 @@
       { "from": "n1", "to": "n2" },
       { "from": "n2", "to": "n3a" },
       { "from": "n3a", "to": "n3b" },
-      { "from": "n3b", "to": "n4" },
-      { "from": "n4", "to": "n5" }
+      { "from": "n4", "to": "n5" },
+      { "from": "n3b", "to": "n4" }
     ]
   }
 }

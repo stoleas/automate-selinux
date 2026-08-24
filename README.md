@@ -11,7 +11,7 @@ Collect and Notify (AAP job template)
     → Collects AVC denials + audit2allow output from the demo VM
     → POSTs event to EDA event stream
     → EDA rule fires "Forward to Orchestrator"
-    → Orchestrator webhook (/api/v1/webhooks/selinux)
+    → Orchestrator webhook (/api/v1/webhooks/eda/selinux)
     → Orchestrator workflow:
         AI Analysis (native agentic node)
         → Generate Report (AAP)
@@ -38,7 +38,7 @@ The Automation Orchestrator owns the workflow DAG. AAP provides leaf job templat
 
 | Node | Type | Purpose |
 |---|---|---|
-| Webhook trigger | `webhook_trigger` | Receives EDA events on path `selinux` |
+| Webhook trigger | `eda_trigger` | Receives EDA events on path `selinux` (`POST /api/v1/webhooks/eda/selinux`) |
 | AI Analysis | `agentic` | Analyzes AVC denials via LLM; returns structured JSON findings |
 | Generate Report | AAP job template | Renders markdown report from AI findings |
 | Create ServiceNow Change | AAP job template | Creates a Normal Change ticket with CI link + assignment group |
@@ -216,8 +216,10 @@ In AAP → Event-Driven Ansible → Activations, **SELinux Monitor** should be R
 ### Watch the chain
 
 1. EDA matches `selinux_analysis` → launches Forward to Orchestrator  
-2. Event reaches Orchestrator webhook `/api/v1/webhooks/selinux`  
+2. Event reaches Orchestrator webhook `/api/v1/webhooks/eda/selinux`  
 3. Workflow: AI Analysis → Generate Report → Create ServiceNow Change → poll approval  
+
+API reference (OpenAPI / Swagger): `https://orchestrator.apps.sno.stoleas.home/docs` (`/api_docs/v1/openapi.json`).  
 
 Monitor AAP **Jobs** and the Orchestrator workflow run. The approval node polls ServiceNow every 30 seconds (configurable).
 
@@ -277,7 +279,8 @@ If the snapshot leaves SELinux disabled or the domain is orphaned from libvirt, 
 | Forward / Report / Remediation missing extras | Enable **Prompt on launch → Variables** (`ask_variables_on_launch`) on those templates |
 | EDA event stream 401 | Check event stream Basic auth credentials |
 | Orchestrator 401 | Re-authenticate; refresh the Orchestrator credential in AAP |
-| Workflow not triggering | Confirm the workflow is published; re-run `orchestrator/setup.sh` |
+| Workflow not triggering | Confirm the workflow is published; re-run `orchestrator/setup.sh`. 2026.8 webhooks need a service-account Bearer token at `POST /api/v1/webhooks/eda/selinux` |
+| AAP node SSRF / DNS | Orchestrator workers cannot resolve `*.apps.sno.stoleas.home`. Point the AAP integration at `http://aap.aap.svc` (`allow_http: true`) and allowlist that host in ConfigMap `automation-orchestrator-admin-settings` |
 | ServiceNow 401 / 403 | Check credentials; ensure Change Management is available on the instance |
 | Change stuck in New | Poll/set the `approval` field, not `state` |
 | Approval poll timeout | Raise `servicenow_approval_timeout_minutes` in `vars.yml` |

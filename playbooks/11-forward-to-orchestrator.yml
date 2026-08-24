@@ -5,28 +5,37 @@
   gather_facts: false
   become: false
   tasks:
-    - name: Get fresh Orchestrator token
+    # AO 2026.8 webhooks require a service-account Bearer token
+    # (OAuth 2.0 client_credentials). The AAP Orchestrator credential
+    # injects client_id as orchestrator_username and client_secret as
+    # orchestrator_password.
+    - name: Get Orchestrator token via OAuth client credentials
       ansible.builtin.uri:
-        url: "{{ orchestrator_url }}/api/v1/auth/login"
+        url: "{{ orchestrator_url }}/api/v1/auth/token"
         method: POST
-        body_format: json
+        body_format: form-urlencoded
         body:
-          username: "{{ orchestrator_username }}"
-          password: "{{ orchestrator_password }}"
+          grant_type: client_credentials
+          client_id: "{{ orchestrator_username }}"
+          client_secret: "{{ orchestrator_password }}"
         validate_certs: false
+        status_code: [200]
       register: auth_response
 
-    - name: POST event to Orchestrator webhook
+    - name: POST event to Orchestrator EDA webhook
       ansible.builtin.uri:
-        url: "{{ orchestrator_url }}/api/v1/webhooks/selinux"
+        url: "{{ orchestrator_url }}/api/v1/webhooks/eda/selinux"
         method: POST
         headers:
           Authorization: "Bearer {{ auth_response.json.access_token }}"
           Content-Type: application/json
         body_format: json
+        # Flatten EDA's {meta, payload} envelope so the workflow always
+        # sees ${trigger.payload.avc_denials} (AO 2026.8 trigger output
+        # is the webhook body; one payload key, not nested event wrappers).
         body:
           kafka_topic: "{{ orchestrator_topic | default('eda-selinux') }}"
-          payload: "{{ orchestrator_event }}"
+          payload: "{{ orchestrator_event.payload | default(orchestrator_event) }}"
         validate_certs: false
         status_code: [200, 201, 202]
       register: webhook_result
