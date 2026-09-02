@@ -2,6 +2,12 @@
 # setup.sh — Create and publish the SELinux Orchestrator workflow (AO 2026.8).
 # Idempotent: safe to re-run.
 #
+# DAG: EDA → AI triage → python normalize → switch
+#   auto_patch_dev: commit → sync → dynamic apply JT → observe
+#   approval_required_prod: AO approval → same chain
+#   investigate: second agent → parse → notify JT
+#   fallback: python no-op
+#
 # Prerequisites:
 #   - AAP Controller provisioned via controller/setup.yml (job templates exist)
 #   - Orchestrator deployed and accessible
@@ -254,25 +260,19 @@ orch -X PATCH "$ORCHESTRATOR_URL/api/v1/integrations/$LLM_INT_ID/models/$LLM_MOD
 # ── Part 4: AAP job template IDs ─────────────────────────────────────────────
 step "Discovering AAP job template IDs"
 
-REPORT_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Generate Report")
-[[ -z "$REPORT_JT_ID" ]] && die "Job template 'SELinux - Generate Report' not found"
-ok "Generate Report JT: $REPORT_JT_ID"
+require_jt() {
+  local name="$1" var="$2" id
+  id=$(aap_id_by_name /api/controller/v2/job_templates "$name")
+  [[ -z "$id" ]] && die "Job template '$name' not found"
+  printf -v "$var" '%s' "$id"
+  ok "$name JT: $id"
+}
 
-REMEDIATE_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Apply Remediation")
-[[ -z "$REMEDIATE_JT_ID" ]] && die "Job template 'SELinux - Apply Remediation' not found"
-ok "Apply Remediation JT: $REMEDIATE_JT_ID"
-
-CREATE_CHANGE_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Create ServiceNow Change")
-[[ -z "$CREATE_CHANGE_JT_ID" ]] && die "Job template 'SELinux - Create ServiceNow Change' not found"
-ok "Create ServiceNow Change JT: $CREATE_CHANGE_JT_ID"
-
-CHECK_APPROVAL_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Check ServiceNow Approval")
-[[ -z "$CHECK_APPROVAL_JT_ID" ]] && die "Job template 'SELinux - Check ServiceNow Approval' not found"
-ok "Check ServiceNow Approval JT: $CHECK_APPROVAL_JT_ID"
-
-OBSERVATION_JT_ID=$(aap_id_by_name /api/controller/v2/job_templates "SELinux - Post-Remediation Observation")
-[[ -z "$OBSERVATION_JT_ID" ]] && die "Job template 'SELinux - Post-Remediation Observation' not found"
-ok "Post-Remediation Observation JT: $OBSERVATION_JT_ID"
+require_jt "SELinux - Apply Remediation" REMEDIATE_JT_ID
+require_jt "SELinux - Post-Remediation Observation" OBSERVATION_JT_ID
+require_jt "SELinux - Commit Remediations" COMMIT_JT_ID
+require_jt "SELinux - Sync and Deploy" SYNC_JT_ID
+require_jt "SELinux - Notify Investigation" NOTIFY_JT_ID
 
 # ── Part 5: Service account (must exist before publish so the trigger allowlist is set)
 # Re-runs must NOT rotate the client secret — that invalidates AAP credential 7.
@@ -302,8 +302,7 @@ fi
 # ── Part 6: Create / update and publish workflow ─────────────────────────────
 step "Building workflow definition"
 WFDEF=$(LLM_MODEL_ID="$LLM_MODEL_ID" LLM_CRED_ID="$LLM_CRED_ID" AAP_INT_ID="$AAP_INT_ID" AAP_CRED_ID="$AAP_CRED_ID" \
-  REPORT_JT_ID="$REPORT_JT_ID" REMEDIATE_JT_ID="$REMEDIATE_JT_ID" \
-  CREATE_CHANGE_JT_ID="$CREATE_CHANGE_JT_ID" CHECK_APPROVAL_JT_ID="$CHECK_APPROVAL_JT_ID" \
+  COMMIT_JT_ID="$COMMIT_JT_ID" SYNC_JT_ID="$SYNC_JT_ID" NOTIFY_JT_ID="$NOTIFY_JT_ID" \
   OBSERVATION_JT_ID="$OBSERVATION_JT_ID" PROJECT_ID="$PROJECT_ID" WF_NAME="$WF_NAME" \
   SA_ID="$SA_ID" \
   python3 -c "
@@ -312,12 +311,15 @@ with open('$SCRIPT_DIR/workflow-definition.json') as f:
     d = json.load(f)
 d['project_id'] = os.environ['PROJECT_ID']
 d['name'] = os.environ['WF_NAME']
-ids = {
-    'Generate Report': int(os.environ['REPORT_JT_ID']),
-    'Create ServiceNow Change': int(os.environ['CREATE_CHANGE_JT_ID']),
-    'Check ServiceNow Approval': int(os.environ['CHECK_APPROVAL_JT_ID']),
-    'Apply Remediation': int(os.environ['REMEDIATE_JT_ID']),
-    'Post-Remediation Observation': int(os.environ['OBSERVATION_JT_ID']),
+# Fixed JTs by node id. nRemDev/nRemProd keep job_template_name expressions.
+jt_by_node = {
+    'nFetchDev': int(os.environ['COMMIT_JT_ID']),
+    'nFetchProd': int(os.environ['COMMIT_JT_ID']),
+    'nSyncDev': int(os.environ['SYNC_JT_ID']),
+    'nSyncProd': int(os.environ['SYNC_JT_ID']),
+    'nObsDev': int(os.environ['OBSERVATION_JT_ID']),
+    'nObsProd': int(os.environ['OBSERVATION_JT_ID']),
+    'nNotify': int(os.environ['NOTIFY_JT_ID']),
 }
 for trig in d['workflow_definition'].get('triggers', []):
     params = trig.setdefault('parameters', {})
@@ -331,7 +333,12 @@ for node in d['workflow_definition']['nodes']:
     elif node['type'] == 'aap_job_template':
         params['credential_id'] = os.environ['AAP_CRED_ID']
         params['integration_id'] = os.environ['AAP_INT_ID']
-        params['job_template_id'] = ids[node['name']]
+        if node['id'] in jt_by_node:
+            params['job_template_id'] = jt_by_node[node['id']]
+            params.pop('job_template_name', None)
+        else:
+            params.setdefault('organization_name', 'Default')
+            params.pop('job_template_id', None)
 print(json.dumps(d))
 ")
 
@@ -422,11 +429,11 @@ echo "  Project:               $PROJECT_ID"
 echo "  Service account:       $SA_ID ($SA_NAME)"
 echo "  LLM integration:       $LLM_INT_ID"
 echo "  LLM model:             $LLM_MODEL_ID ($LLM_MODEL_NAME)"
-echo "  Generate Report JT:    $REPORT_JT_ID"
-echo "  Create Change JT:      $CREATE_CHANGE_JT_ID"
-echo "  Check Approval JT:     $CHECK_APPROVAL_JT_ID"
-echo "  Apply Remediation JT:  $REMEDIATE_JT_ID"
-echo "  Observation JT:        $OBSERVATION_JT_ID"
+echo "  Commit Remediations JT: $COMMIT_JT_ID"
+echo "  Sync and Deploy JT:     $SYNC_JT_ID"
+echo "  Notify Investigation JT:$NOTIFY_JT_ID"
+echo "  Apply Remediation JT:   $REMEDIATE_JT_ID (launched via job_template_name expression)"
+echo "  Observation JT:         $OBSERVATION_JT_ID"
 echo "  AAP Credential:        $AAP_CRED_ID"
 echo "  LLM Credential:        $LLM_CRED_ID"
 echo

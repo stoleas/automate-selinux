@@ -109,3 +109,27 @@ job_templates:
       - "SELinux Lab Machine Credential"
       - "SELinux Lab Vault Credential"
     ask_variables_on_launch: true
+
+  - name: "SELinux - Commit Remediations"
+    description: "Persist AI remediations as an artifact and publish the downstream job template name (Gitea/Lightspeed stand-in)"
+    playbook: playbooks/17-commit-remediations.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true
+
+  - name: "SELinux - Sync and Deploy"
+    description: "Publish the dynamically chosen remediation job template name after the AAP project sync stand-in"
+    playbook: playbooks/18-sync-and-deploy.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true
+
+  - name: "SELinux - Notify Investigation"
+    description: "Print a structured investigation notice (Mattermost stand-in)"
+    playbook: playbooks/19-notify-investigation.yml
+    inventory: "SELinux Lab"
+    credentials:
+      - "SELinux Lab Vault Credential"
+    ask_variables_on_launch: true

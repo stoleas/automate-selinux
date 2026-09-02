@@ -240,6 +240,7 @@
         project: "{{ project_name }}"
         playbook: playbooks/10-collect-and-notify.yml
         inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
         credentials:
           - "{{ machine_credential_name }}"
           - "{{ vault_credential_name }}"
@@ -304,6 +305,36 @@
           - "{{ machine_credential_name }}"
           - "{{ vault_credential_name }}"
 
+      - name: "SELinux - Commit Remediations"
+        description: "Persist AI remediations as an artifact and publish the downstream job template name (Gitea/Lightspeed stand-in)"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/17-commit-remediations.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Sync and Deploy"
+        description: "Publish the dynamically chosen remediation job template name after the AAP project sync stand-in"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/18-sync-and-deploy.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ vault_credential_name }}"
+
+      - name: "SELinux - Notify Investigation"
+        description: "Print a structured investigation notice (Mattermost stand-in)"
+        organization: "{{ organization }}"
+        project: "{{ project_name }}"
+        playbook: playbooks/19-notify-investigation.yml
+        inventory: "{{ inventory_name }}"
+        ask_variables_on_launch: true
+        credentials:
+          - "{{ vault_credential_name }}"
+
   roles:
     - infra.aap_configuration.dispatch
 
@@ -316,7 +347,7 @@
           Project:    {{ project_name }}
           Inventory:  {{ inventory_name }} (host: {{ kvm_host_name }} / {{ kvm_host_ip }})
           Credentials: {{ machine_credential_name }}, {{ vault_credential_name }}, {{ orchestrator_credential_name }}
-          Job Templates: 16
+          Job Templates: 19
           Workflows: none (managed by Automation Orchestrator)
 
           Next steps:

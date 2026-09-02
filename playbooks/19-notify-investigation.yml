@@ -1,0 +1,54 @@
+---
+# Lab stand-in for "Notify Mattermost — CVE Investigation".
+# Prints a structured investigation notice in job stdout. Mattermost is
+# not in the lab; this JT is the notification hop on the investigate path.
+- name: Notify SELinux investigation outcome
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  tags:
+    - notify
+  tasks:
+    - name: Set investigation from extra var (string input)
+      ansible.builtin.set_fact:
+        investigation: "{{ (investigation_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') | regex_replace('(?s)\\n</string>\\s*$', '') | regex_replace('(?s)^<string>\\s*', '')) | from_json }}"
+      when: investigation_json is defined and investigation_json | type_debug in ['str', 'AnsibleUnsafeText'] and investigation_json | length > 0
+
+    - name: Set investigation from extra var (dict input)
+      ansible.builtin.set_fact:
+        investigation: "{{ investigation_json }}"
+      when: investigation_json is defined and investigation_json is mapping
+
+    - name: Set empty investigation
+      ansible.builtin.set_fact:
+        investigation:
+          headline: "{{ investigation_headline | default('SELinux investigation required') }}"
+          risk: "unknown"
+          recommended_checks: []
+          next_action: ""
+      when: investigation is not defined
+
+    - name: Display investigation notice
+      ansible.builtin.debug:
+        msg: |
+          === SELinux Investigation Notice (Mattermost stand-in) ===
+          Host: {{ vm_name | default('selinux-demo') }}
+          Headline: {{ investigation.headline | default(investigation_headline) | default('SELinux investigation required') }}
+          Risk: {{ investigation.risk | default('unknown') }}
+          Next action: {{ investigation.next_action | default('n/a') }}
+          Unknown denials:
+          {% for d in investigation.unknown_denials | default([]) %}
+            - {{ d }}
+          {% endfor %}
+          Recommended checks:
+          {% for c in investigation.recommended_checks | default([]) %}
+            - {{ c }}
+          {% endfor %}
+
+    - name: Publish notification artifacts
+      ansible.builtin.set_stats:
+        data:
+          notified: true
+          headline: "{{ investigation.headline | default(investigation_headline) | default('SELinux investigation required') }}"
+        per_host: false

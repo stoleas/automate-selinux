@@ -1,0 +1,33 @@
+---
+# Lab stand-in for "Sync & Deploy via AAP".
+# Re-publishes the job template name chosen by the commit step so the
+# Orchestrator can launch it dynamically. The AAP project already tracks
+# git@github.com:stoleas/automate-selinux.git with scm_update_on_launch.
+- name: Sync AAP project and publish remediation template name
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  tags:
+    - sync
+  tasks:
+    - name: Resolve downstream job template name
+      ansible.builtin.set_fact:
+        _template_name: "{{ template_name | default('SELinux - Apply Remediation') }}"
+
+    - name: Display sync stand-in
+      ansible.builtin.debug:
+        msg: |
+          === Sync and Deploy ===
+          Environment: {{ demo_environment | default(environment) | default('dev') }}
+          Template: {{ _template_name }}
+          SCM: git@github.com:stoleas/automate-selinux.git (Gitea analog)
+          Note: Project sync is scm_update_on_launch on the AAP project.
+          This job publishes template_name for ${nSync*.artifacts.template_name}.
+
+    - name: Publish template name for the dynamic remediation node
+      ansible.builtin.set_stats:
+        data:
+          template_name: "{{ _template_name }}"
+          environment: "{{ demo_environment | default(environment) | default('dev') }}"
+        per_host: false

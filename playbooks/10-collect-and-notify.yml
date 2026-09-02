@@ -50,6 +50,8 @@
         body:
           action: selinux_analysis
           host: "{{ vm_name | default('selinux-demo') }}"
+          environment: "{{ demo_environment | default('dev') }}"
+          force_route: "{{ force_route | default('') }}"
           avc_count: "{{ _avc_text_full.split('\n') | select | length }}"
           avc_denials: "{{ _avc_text }}"
           audit2allow_output: "{{ _audit2allow_text }}"
@@ -69,6 +71,8 @@
           === EDA Notification Sent ===
           Endpoint: {{ eda_webhook_url }}
           Action: selinux_analysis
+          Environment: {{ demo_environment | default('dev') }}
+          Force route: {{ force_route | default('(none)') }}
           AVC denials (full/sent chars): {{ _avc_text_full | length }}/{{ _avc_text | length }}{{ ' [truncated]' if _avc_truncated else '' }}
           audit2allow chars: {{ _audit2allow_text_full | length }}/{{ _audit2allow_text | length }}{{ ' [truncated]' if _audit2allow_truncated else '' }}
           Response: {{ _eda_response.status }}

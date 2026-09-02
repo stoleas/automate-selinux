@@ -1,0 +1,64 @@
+---
+# Lab stand-in for "Fetch from Lightspeed & Commit to Gitea".
+# Persists the AI triage JSON as a job artifact and publishes the
+# downstream job template name via set_stats. Production would fetch
+# remediation content and commit it to Gitea for AAP to sync.
+- name: Commit SELinux remediations as an artifact
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  tags:
+    - commit
+  tasks:
+    - name: Set AI analysis from extra var (string input)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ (selinux_analysis_json | regex_replace('(?s)^```json\\s*', '') | regex_replace('(?s)\\s*```\\s*$', '') | regex_replace('(?s)\\n</string>\\s*$', '') | regex_replace('(?s)^<string>\\s*', '')) | from_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json | type_debug in ['str', 'AnsibleUnsafeText'] and selinux_analysis_json | length > 0
+
+    - name: Set AI analysis from extra var (dict input)
+      ansible.builtin.set_fact:
+        selinux_analysis: "{{ selinux_analysis_json }}"
+      when: selinux_analysis_json is defined and selinux_analysis_json is mapping
+
+    - name: Set empty analysis (no data available)
+      ansible.builtin.set_fact:
+        selinux_analysis:
+          summary: "No AI analysis data available"
+          findings: []
+          route: "fallback"
+      when: selinux_analysis is not defined
+
+    - name: Ensure reports directory exists
+      ansible.builtin.file:
+        path: "{{ report_output_dir }}"
+        state: directory
+        mode: "0755"
+      failed_when: false
+
+    - name: Write remediation artifact
+      ansible.builtin.copy:
+        dest: "{{ report_output_dir }}/remediation-artifact.json"
+        content: "{{ selinux_analysis | to_nice_json }}"
+        mode: "0644"
+      failed_when: false
+
+    - name: Display commit stand-in
+      ansible.builtin.debug:
+        msg: |
+          === Commit Remediations (Gitea stand-in) ===
+          Environment: {{ demo_environment | default(environment) | default('dev') }}
+          Host: {{ vm_name | default('selinux-demo') }}
+          Route: {{ selinux_analysis.route | default('unspecified') }}
+          Findings: {{ selinux_analysis.findings | default([]) | length }}
+          Downstream JT: SELinux - Apply Remediation
+          Note: GitHub stoleas/automate-selinux stands in for Gitea. This job
+          publishes the artifact and the template name; it does not push git.
+
+    - name: Publish template name for the dynamic AAP node
+      ansible.builtin.set_stats:
+        data:
+          template_name: "SELinux - Apply Remediation"
+          environment: "{{ demo_environment | default(environment) | default('dev') }}"
+          finding_count: "{{ selinux_analysis.findings | default([]) | length }}"
+        per_host: false

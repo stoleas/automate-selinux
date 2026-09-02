@@ -1,10 +1,10 @@
 {
   "name": "SELinux Remediation Workflow",
-  "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation. AO 2026.8 expressions: trigger output is the webhook body (${trigger.payload.*}); agentic output is ${n1.result.content}; AAP artifacts are ${n3a.artifacts.*}. API: /docs",
+  "description": "EDA -> AI triage -> switch (dev auto-patch / prod approval / investigate / fallback). Dev and prod share the commit -> sync -> dynamic JT -> observe chain; prod adds an AO approval gate. Investigate runs a second agent, a python parse script, and a notify JT. Expressions: ${trigger.payload.*}, agentic ${nTriage.result.content}, AAP ${nFetchDev.artifacts.*}.",
   "workflow_definition": {
     "schema_version": "2.0.0",
     "name": "SELinux Remediation Workflow",
-    "description": "EDA -> AI analysis -> Report -> ServiceNow change ticket -> Approval poll -> AAP remediation -> Observation",
+    "description": "Switch-routed SELinux remediation: AI triage, env split, prod approval, investigate, fallback",
     "triggers": [
       {
         "id": "t1",
@@ -12,50 +12,100 @@
         "name": "SELinux EDA Trigger",
         "parameters": {
           "webhook_path": "selinux",
-          "authorized_service_account_ids": ["PLACEHOLDER_SA_ID"]
+          "authorized_service_account_ids": [
+            "PLACEHOLDER_SA_ID"
+          ]
         }
       }
     ],
     "nodes": [
       {
-        "id": "n1",
+        "id": "nTriage",
         "type": "agentic",
-        "name": "AI Analysis",
+        "name": "AI Triage Agent",
         "parameters": {
-          "prompt": "Analyze SELinux AVC denials from RHEL 10.2 (httpd, /srv/webapp/, permissive mode).\n\nAVC Denials:\n${trigger.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.audit2allow_output}\n\nGroup duplicate denials. Prefer semanage fcontext over booleans/modules.\n\nReturn ONLY raw JSON. Do NOT wrap in markdown code fences. Do NOT use ```json or ```.\nStart your response with { and end with }.\nFormat: {\"summary\":\"brief\",\"findings\":[{\"denial\":\"short desc\",\"source_type\":\"\",\"target_type\":\"\",\"target_path\":\"\",\"permission\":\"\",\"recommendation\":\"short fix\",\"remediation\":{\"type\":\"fcontext|boolean|port|module\",\"selinux_type\":\"\",\"path_spec\":\"\",\"boolean_name\":\"\",\"boolean_value\":\"\"}}],\"audit2allow_assessment\":\"brief\"}",
+          "prompt": "Triage SELinux AVC denials on RHEL (httpd, /srv/webapp/, permissive).\nHost: ${trigger.payload.host}\nEnvironment: ${trigger.payload.environment}\nForce route: ${trigger.payload.force_route}\nAVC count: ${trigger.payload.avc_count}\n\nAVC Denials:\n${trigger.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.audit2allow_output}\n\nGroup duplicates. Prefer semanage fcontext over booleans/modules.\nChoose route:\n- auto_patch_dev: environment is dev AND findings have fcontext/boolean/port remediations\n- approval_required_prod: environment is prod AND remediations are known\n- investigate: no safe known remediation (empty findings, only module, or low confidence)\n- fallback: cannot classify\nIf force_route is one of those four values, use it as route.\n\nReturn ONLY raw JSON. No markdown fences. Start with { end with }.\nKeys: summary, findings[{denial,source_type,target_type,target_path,permission,recommendation,remediation{type,selinux_type,path_spec,boolean_name,boolean_value}}], audit2allow_assessment, route, confidence, rationale",
           "llm_model_id": "PLACEHOLDER_LLM_MODEL_ID",
           "credential_id": "PLACEHOLDER_LLM_CRED_ID",
           "tool_selection_strategy": "NONE",
           "responseSchema": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["summary", "findings", "audit2allow_assessment"],
+            "required": [
+              "summary",
+              "findings",
+              "audit2allow_assessment",
+              "route",
+              "confidence",
+              "rationale"
+            ],
             "properties": {
-              "summary": { "type": "string" },
-              "audit2allow_assessment": { "type": "string" },
+              "summary": {
+                "type": "string"
+              },
+              "audit2allow_assessment": {
+                "type": "string"
+              },
+              "route": {
+                "type": "string"
+              },
+              "confidence": {
+                "type": "string"
+              },
+              "rationale": {
+                "type": "string"
+              },
               "findings": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": ["denial", "recommendation", "remediation"],
+                  "required": [
+                    "denial",
+                    "recommendation",
+                    "remediation"
+                  ],
                   "properties": {
-                    "denial": { "type": "string" },
-                    "source_type": { "type": "string" },
-                    "target_type": { "type": "string" },
-                    "target_path": { "type": "string" },
-                    "permission": { "type": "string" },
-                    "recommendation": { "type": "string" },
+                    "denial": {
+                      "type": "string"
+                    },
+                    "source_type": {
+                      "type": "string"
+                    },
+                    "target_type": {
+                      "type": "string"
+                    },
+                    "target_path": {
+                      "type": "string"
+                    },
+                    "permission": {
+                      "type": "string"
+                    },
+                    "recommendation": {
+                      "type": "string"
+                    },
                     "remediation": {
                       "type": "object",
                       "additionalProperties": false,
-                      "required": ["type"],
+                      "required": [
+                        "type"
+                      ],
                       "properties": {
-                        "type": { "type": "string" },
-                        "selinux_type": { "type": "string" },
-                        "path_spec": { "type": "string" },
-                        "boolean_name": { "type": "string" },
-                        "boolean_value": { "type": "string" }
+                        "type": {
+                          "type": "string"
+                        },
+                        "selinux_type": {
+                          "type": "string"
+                        },
+                        "path_spec": {
+                          "type": "string"
+                        },
+                        "boolean_name": {
+                          "type": "string"
+                        },
+                        "boolean_value": {
+                          "type": "string"
+                        }
                       }
                     }
                   }
@@ -66,82 +116,333 @@
         }
       },
       {
-        "id": "n2",
-        "type": "aap_job_template",
-        "name": "Generate Report",
+        "id": "nParse",
+        "type": "script",
+        "name": "Normalize Route",
         "parameters": {
-          "job_template_id": 0,
+          "language": "python",
+          "environment": {
+            "TRIAGE_JSON": "${nTriage.result.content}",
+            "ENVIRONMENT": "${trigger.payload.environment}",
+            "FORCE_ROUTE": "${trigger.payload.force_route}"
+          },
+          "code": "import json, os, re, sys\nraw = os.environ.get('TRIAGE_JSON') or '{}'\nraw = re.sub(r'^```(?:json)?\\s*|\\s*```$', '', raw.strip())\nraw = re.sub(r'^<string>\\s*|\\s*</string>$', '', raw.strip())\ntry:\n    data = json.loads(raw)\n    if not isinstance(data, dict):\n        data = {'summary': str(data), 'findings': []}\nexcept Exception as exc:\n    data = {'summary': 'unparseable triage', 'findings': [], 'parse_error': str(exc)}\nallowed = {'auto_patch_dev', 'approval_required_prod', 'investigate', 'fallback'}\nforce = (os.environ.get('FORCE_ROUTE') or '').strip()\nenv = (os.environ.get('ENVIRONMENT') or 'dev').strip().lower() or 'dev'\nroute = (data.get('route') or '').strip()\nif force in allowed:\n    route = force\nelif route not in allowed:\n    findings = data.get('findings') if isinstance(data.get('findings'), list) else []\n    known = False\n    for item in findings:\n        if not isinstance(item, dict):\n            continue\n        rtype = ((item.get('remediation') or {}) if isinstance(item.get('remediation'), dict) else {}).get('type')\n        if rtype in ('fcontext', 'boolean', 'port'):\n            known = True\n            break\n    if not findings:\n        route = 'fallback'\n    elif not known:\n        route = 'investigate'\n    elif env == 'prod':\n        route = 'approval_required_prod'\n    else:\n        route = 'auto_patch_dev'\ndata['route'] = route\ndata['environment'] = env\nprint(json.dumps(data, separators=(',', ':')))\n"
+        }
+      },
+      {
+        "id": "nSwitch",
+        "type": "switch",
+        "name": "Route Decision",
+        "parameters": {
+          "cases": [
+            {
+              "port": "auto_patch_dev",
+              "label": "Auto-Patch (Dev)",
+              "condition": "${nParse.result.route} == \"auto_patch_dev\""
+            },
+            {
+              "port": "approval_required_prod",
+              "label": "Approval Required (Prod)",
+              "condition": "${nParse.result.route} == \"approval_required_prod\""
+            },
+            {
+              "port": "investigate",
+              "label": "Investigate",
+              "condition": "${nParse.result.route} == \"investigate\""
+            }
+          ],
+          "default_port": "fallback"
+        }
+      },
+      {
+        "id": "nFetchDev",
+        "type": "aap_job_template",
+        "name": "Commit Remediations (Dev)",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "selinux_analysis_json": "${nTriage.result.content}",
+            "vm_name": "${trigger.payload.host}",
+            "environment": "dev"
+          },
+          "job_template_name": "SELinux - Commit Remediations",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nSyncDev",
+        "type": "aap_job_template",
+        "name": "Sync and Deploy (Dev)",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "template_name": "${nFetchDev.artifacts.template_name}",
+            "environment": "dev"
+          },
+          "job_template_name": "SELinux - Sync and Deploy",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nRemDev",
+        "type": "aap_job_template",
+        "name": "Run SELinux Remediation (Dev)",
+        "parameters": {
+          "job_template_name": "${nSyncDev.artifacts.template_name}",
+          "organization_name": "Default",
           "integration_id": "PLACEHOLDER_AAP_INT_ID",
           "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "trigger_payload": "${trigger.payload}",
-            "selinux_analysis_json": "${n1.result.content}"
+            "selinux_analysis_json": "${nTriage.result.content}"
           }
         }
       },
       {
-        "id": "n3a",
+        "id": "nObsDev",
         "type": "aap_job_template",
-        "name": "Create ServiceNow Change",
+        "name": "Post-Remediation Observation (Dev)",
         "parameters": {
-          "job_template_id": 0,
-          "integration_id": "PLACEHOLDER_AAP_INT_ID",
-          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
-          "extra_vars": {
-            "selinux_analysis_json": "${n1.result.content}",
-            "vm_name": "${trigger.payload.host}"
-          }
-        }
-      },
-      {
-        "id": "n3b",
-        "type": "aap_job_template",
-        "name": "Check ServiceNow Approval",
-        "parameters": {
-          "job_template_id": 0,
-          "integration_id": "PLACEHOLDER_AAP_INT_ID",
-          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
-          "extra_vars": {
-            "servicenow_change_sys_id": "${n3a.artifacts.servicenow_change_sys_id}"
-          }
-        }
-      },
-      {
-        "id": "n4",
-        "type": "aap_job_template",
-        "name": "Apply Remediation",
-        "parameters": {
-          "job_template_id": 0,
-          "integration_id": "PLACEHOLDER_AAP_INT_ID",
-          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
-          "extra_vars": {
-            "trigger_payload": "${trigger.payload}",
-            "selinux_analysis_json": "${n1.result.content}"
-          }
-        }
-      },
-      {
-        "id": "n5",
-        "type": "aap_job_template",
-        "name": "Post-Remediation Observation",
-        "parameters": {
-          "job_template_id": 0,
           "integration_id": "PLACEHOLDER_AAP_INT_ID",
           "credential_id": "PLACEHOLDER_AAP_CRED_ID",
           "extra_vars": {
             "vm_name": "${trigger.payload.host}",
             "pre_avc_count": "${trigger.payload.avc_count}"
+          },
+          "job_template_name": "SELinux - Post-Remediation Observation",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nAppr",
+        "type": "approval",
+        "name": "Approve Production Patch",
+        "parameters": {
+          "prompt": "Approve production SELinux remediation for ${trigger.payload.host}? Review the triage JSON, then approve or reject.",
+          "decision_window": 3600
+        }
+      },
+      {
+        "id": "nFetchProd",
+        "type": "aap_job_template",
+        "name": "Commit Remediations (Prod)",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "selinux_analysis_json": "${nTriage.result.content}",
+            "vm_name": "${trigger.payload.host}",
+            "environment": "prod"
+          },
+          "job_template_name": "SELinux - Commit Remediations",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nSyncProd",
+        "type": "aap_job_template",
+        "name": "Sync and Deploy (Prod)",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "template_name": "${nFetchProd.artifacts.template_name}",
+            "environment": "prod"
+          },
+          "job_template_name": "SELinux - Sync and Deploy",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nRemProd",
+        "type": "aap_job_template",
+        "name": "Run SELinux Remediation (Prod)",
+        "parameters": {
+          "job_template_name": "${nSyncProd.artifacts.template_name}",
+          "organization_name": "Default",
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "trigger_payload": "${trigger.payload}",
+            "selinux_analysis_json": "${nTriage.result.content}"
           }
+        }
+      },
+      {
+        "id": "nObsProd",
+        "type": "aap_job_template",
+        "name": "Post-Remediation Observation (Prod)",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "vm_name": "${trigger.payload.host}",
+            "pre_avc_count": "${trigger.payload.avc_count}"
+          },
+          "job_template_name": "SELinux - Post-Remediation Observation",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nInv",
+        "type": "agentic",
+        "name": "Investigate - No Known Remediation",
+        "parameters": {
+          "prompt": "No safe auto-remediation was selected for this SELinux event. Investigate.\nHost: ${trigger.payload.host}\nEnvironment: ${trigger.payload.environment}\nTriage JSON:\n${nTriage.result.content}\n\nAVC Denials:\n${trigger.payload.avc_denials}\n\naudit2allow:\n${trigger.payload.audit2allow_output}\n\nExplain what is unknown, what a human should check (ausearch, sesearch, booleans, fcontext, custom policy), and the risk of guessing a module. Return ONLY raw JSON (no fences) with keys: headline, unknown_denials (array of strings), recommended_checks (array of strings), risk, next_action.",
+          "llm_model_id": "PLACEHOLDER_LLM_MODEL_ID",
+          "credential_id": "PLACEHOLDER_LLM_CRED_ID",
+          "tool_selection_strategy": "NONE",
+          "responseSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "headline",
+              "unknown_denials",
+              "recommended_checks",
+              "risk",
+              "next_action"
+            ],
+            "properties": {
+              "headline": {
+                "type": "string"
+              },
+              "unknown_denials": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recommended_checks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "risk": {
+                "type": "string"
+              },
+              "next_action": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": "nParseInv",
+        "type": "script",
+        "name": "Parse Investigation Result",
+        "parameters": {
+          "language": "python",
+          "environment": {
+            "INVESTIGATION_JSON": "${nInv.result.content}",
+            "HOST": "${trigger.payload.host}"
+          },
+          "code": "import json, os, re\nraw = os.environ.get('INVESTIGATION_JSON') or '{}'\nraw = re.sub(r'^```(?:json)?\\s*|\\s*```$', '', raw.strip())\nraw = re.sub(r'^<string>\\s*|\\s*</string>$', '', raw.strip())\ntry:\n    data = json.loads(raw)\n    if not isinstance(data, dict):\n        data = {'headline': str(data)}\nexcept Exception as exc:\n    data = {'headline': 'unparseable investigation', 'parse_error': str(exc)}\nhost = os.environ.get('HOST') or 'unknown'\nheadline = data.get('headline') or 'SELinux investigation required'\nchecks = data.get('recommended_checks') if isinstance(data.get('recommended_checks'), list) else []\nbody = '\\n'.join(f'- {c}' for c in checks) or 'No checks listed.'\nout = {\n    'host': host,\n    'headline': headline,\n    'risk': data.get('risk') or 'unknown',\n    'next_action': data.get('next_action') or '',\n    'body': body,\n    'unknown_denials': data.get('unknown_denials') or [],\n}\nprint(json.dumps(out, separators=(',', ':')))\n"
+        }
+      },
+      {
+        "id": "nNotify",
+        "type": "aap_job_template",
+        "name": "Notify Investigation",
+        "parameters": {
+          "integration_id": "PLACEHOLDER_AAP_INT_ID",
+          "credential_id": "PLACEHOLDER_AAP_CRED_ID",
+          "extra_vars": {
+            "investigation_json": "${nInv.result.content}",
+            "investigation_headline": "${nParseInv.result.headline}",
+            "vm_name": "${trigger.payload.host}"
+          },
+          "job_template_name": "SELinux - Notify Investigation",
+          "organization_name": "Default"
+        }
+      },
+      {
+        "id": "nFall",
+        "type": "script",
+        "name": "Fallback",
+        "parameters": {
+          "language": "python",
+          "environment": {
+            "HOST": "${trigger.payload.host}",
+            "ROUTE": "${nParse.result.route}"
+          },
+          "code": "import json, os\nprint(json.dumps({'status': 'fallback', 'host': os.environ.get('HOST'), 'route': os.environ.get('ROUTE'), 'message': 'No auto-patch, approval, or investigate path matched.'}, separators=(',', ':')))\n"
         }
       }
     ],
     "edges": [
-      { "from": "t1", "to": "n1" },
-      { "from": "n1", "to": "n2" },
-      { "from": "n2", "to": "n3a" },
-      { "from": "n3a", "to": "n3b" },
-      { "from": "n4", "to": "n5" },
-      { "from": "n3b", "to": "n4" }
+      {
+        "from": "t1",
+        "to": "nTriage"
+      },
+      {
+        "from": "nTriage",
+        "to": "nParse"
+      },
+      {
+        "from": "nParse",
+        "to": "nSwitch"
+      },
+      {
+        "from": "nSwitch",
+        "to": "nFetchDev",
+        "from_port": "auto_patch_dev"
+      },
+      {
+        "from": "nFetchDev",
+        "to": "nSyncDev"
+      },
+      {
+        "from": "nSyncDev",
+        "to": "nRemDev"
+      },
+      {
+        "from": "nRemDev",
+        "to": "nObsDev"
+      },
+      {
+        "from": "nSwitch",
+        "to": "nAppr",
+        "from_port": "approval_required_prod"
+      },
+      {
+        "from": "nAppr",
+        "to": "nFetchProd",
+        "from_port": "approved"
+      },
+      {
+        "from": "nFetchProd",
+        "to": "nSyncProd"
+      },
+      {
+        "from": "nSyncProd",
+        "to": "nRemProd"
+      },
+      {
+        "from": "nRemProd",
+        "to": "nObsProd"
+      },
+      {
+        "from": "nSwitch",
+        "to": "nInv",
+        "from_port": "investigate"
+      },
+      {
+        "from": "nInv",
+        "to": "nParseInv"
+      },
+      {
+        "from": "nParseInv",
+        "to": "nNotify"
+      },
+      {
+        "from": "nSwitch",
+        "to": "nFall",
+        "from_port": "fallback"
+      }
     ]
   }
 }
